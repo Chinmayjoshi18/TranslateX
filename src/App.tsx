@@ -34,18 +34,18 @@ function App() {
   const [copyStates, setCopyStates] = useState<CopyState>({});
   const [globalCopied, setGlobalCopied] = useState(false);
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>({
-    rowNumber: 60,
-    english: 250,
-    spanish: 250,
-    french: 250,
-    turkish: 250,
-    russian: 250,
-    ukrainian: 250,
-    portuguese: 250,
-    chinese: 250,
-    japanese: 250,
-    arabic: 250,
-    actions: 80
+    rowNumber: 80,
+    english: 300,
+    spanish: 300,
+    french: 300,
+    turkish: 300,
+    russian: 300,
+    ukrainian: 300,
+    portuguese: 300,
+    chinese: 300,
+    japanese: 300,
+    arabic: 300,
+    actions: 100
   });
   const [isResizing, setIsResizing] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width?: number; height?: number }>({ x: 0, y: 0 });
@@ -79,7 +79,10 @@ function App() {
     if (!isResizing || !resizeStart.width) return;
     
     const deltaX = e.clientX - resizeStart.x;
-    const newWidth = Math.max(100, resizeStart.width + deltaX);
+    // Set minimum widths based on column type
+    const minWidth = isResizing === 'rowNumber' ? 60 : 
+                    isResizing === 'actions' ? 80 : 200;
+    const newWidth = Math.max(minWidth, resizeStart.width + deltaX);
     
     setColumnWidths(prev => ({
       ...prev,
@@ -405,15 +408,27 @@ function App() {
 
         {/* Table */}
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          <div className="overflow-auto">
-            <table className="border-collapse" style={{ width: 'fit-content', minWidth: '100%' }}>
+          {/* Scroll Indicator */}
+          <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-sm text-blue-700 text-center">
+            ← Scroll horizontally to view all languages →
+          </div>
+          <div className="overflow-x-auto overflow-y-auto max-h-[80vh]" style={{ scrollbarWidth: 'thin' }}>
+            <table className="border-collapse" style={{ 
+              width: 'max-content', 
+              minWidth: '100%',
+              tableLayout: 'fixed'
+            }}>
               {/* Table Header */}
               <thead className="bg-gray-50">
                 <tr>
                   {/* Row Number Column */}
                   <th 
                     className="px-3 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200 relative"
-                    style={{ width: columnWidths.rowNumber }}
+                    style={{ 
+                      width: columnWidths.rowNumber,
+                      minWidth: columnWidths.rowNumber,
+                      maxWidth: columnWidths.rowNumber
+                    }}
                   >
                     #
                     {/* Column resize handle */}
@@ -428,7 +443,11 @@ function App() {
                     <th
                       key={lang.key}
                       className="px-4 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200 relative"
-                      style={{ width: columnWidths[lang.key] }}
+                      style={{ 
+                        width: columnWidths[lang.key],
+                        minWidth: columnWidths[lang.key],
+                        maxWidth: columnWidths[lang.key]
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-lg">{lang.flag}</span>
@@ -448,7 +467,11 @@ function App() {
                   {/* Actions Column */}
                   <th 
                     className="px-3 py-4 text-center text-sm font-medium text-gray-700 border-b border-gray-200 relative"
-                    style={{ width: columnWidths.actions }}
+                    style={{ 
+                      width: columnWidths.actions,
+                      minWidth: columnWidths.actions,
+                      maxWidth: columnWidths.actions
+                    }}
                   >
                     Actions
                     {/* Column resize handle */}
@@ -467,7 +490,12 @@ function App() {
                     {/* Row Number */}
                     <td 
                       className="px-3 text-sm text-gray-500 border-b border-r border-gray-200 text-center relative"
-                      style={{ width: columnWidths.rowNumber, height: row.height }}
+                      style={{ 
+                        width: columnWidths.rowNumber, 
+                        minWidth: columnWidths.rowNumber,
+                        maxWidth: columnWidths.rowNumber,
+                        height: row.height 
+                      }}
                     >
                       <div className="flex items-center justify-center h-full">
                         {index + 1}
@@ -482,7 +510,12 @@ function App() {
                     {/* English Column (Editable) */}
                     <td 
                       className="px-4 border-b border-r border-gray-200 relative"
-                      style={{ width: columnWidths.english, height: row.height }}
+                      style={{ 
+                        width: columnWidths.english, 
+                        minWidth: columnWidths.english,
+                        maxWidth: columnWidths.english,
+                        height: row.height 
+                      }}
                     >
                       <div className="relative h-full">
                         <textarea
@@ -517,7 +550,12 @@ function App() {
                       <td 
                         key={lang.key} 
                         className="px-4 border-b border-r border-gray-200 relative"
-                        style={{ width: columnWidths[lang.key], height: row.height }}
+                        style={{ 
+                          width: columnWidths[lang.key], 
+                          minWidth: columnWidths[lang.key],
+                          maxWidth: columnWidths[lang.key],
+                          height: row.height 
+                        }}
                       >
                         <div className="relative h-full">
                           <textarea
@@ -559,7 +597,12 @@ function App() {
                     {/* Actions Column */}
                     <td 
                       className="px-3 border-b border-gray-200 text-center relative"
-                      style={{ width: columnWidths.actions, height: row.height }}
+                      style={{ 
+                        width: columnWidths.actions, 
+                        minWidth: columnWidths.actions,
+                        maxWidth: columnWidths.actions,
+                        height: row.height 
+                      }}
                     >
                       <div className="flex items-center justify-center h-full">
                         <button
