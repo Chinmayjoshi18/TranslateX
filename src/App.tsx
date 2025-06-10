@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet, Settings, X } from 'lucide-react';
-import { translateText, TranslationResult } from './services/translationService';
+import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet, Settings, X, ChevronUp, ChevronDown, Shuffle, Bot, Zap } from 'lucide-react';
+import { translateText, TranslationResult, setTranslationService, getCurrentService, TRANSLATION_SERVICES, TranslationService } from './services/translationService';
 import * as XLSX from 'xlsx';
 
 interface TableRow {
@@ -24,6 +24,13 @@ interface CopyState {
 
 interface ColumnWidths {
   [key: string]: number;
+}
+
+interface Language {
+  key: string;
+  name: string;
+  flag: string;
+  code: string;
 }
 
 function App() {
@@ -65,9 +72,10 @@ function App() {
   });
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLogs, setDebugLogs] = useState<Array<{ timestamp: string; message: string; type: 'info' | 'error' | 'success' }>>([]);
+  const [selectedTranslationService, setSelectedTranslationService] = useState<TranslationService>('huggingface');
 
-  // Language configurations
-  const languages = [
+  // Default language order (English first, others can be reordered)
+  const [languageOrder, setLanguageOrder] = useState<Language[]>([
     { key: 'english', name: 'English', flag: '🇺🇸', code: 'en' },
     { key: 'spanish', name: 'Spanish', flag: '🇪🇸', code: 'es' },
     { key: 'french', name: 'French', flag: '🇫🇷', code: 'fr' },
@@ -78,7 +86,40 @@ function App() {
     { key: 'chinese', name: 'Chinese', flag: '🇨🇳', code: 'zh' },
     { key: 'japanese', name: 'Japanese', flag: '🇯🇵', code: 'ja' },
     { key: 'arabic', name: 'Arabic', flag: '🇸🇦', code: 'ar' }
-  ];
+  ]);
+
+  // Column reordering functions
+  const moveLanguage = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === 0 || toIndex === 0) return; // Don't move English column
+    
+    const newOrder = [...languageOrder];
+    const [movedItem] = newOrder.splice(fromIndex, 1);
+    newOrder.splice(toIndex, 0, movedItem);
+    setLanguageOrder(newOrder);
+  };
+
+  const moveLanguageUp = (index: number) => {
+    if (index <= 1) return; // Can't move English or first translation column up
+    moveLanguage(index, index - 1);
+  };
+
+  const moveLanguageDown = (index: number) => {
+    if (index === 0 || index >= languageOrder.length - 1) return; // Can't move English or last column down
+    moveLanguage(index, index + 1);
+  };
+
+  const shuffleLanguages = () => {
+    const english = languageOrder[0]; // Keep English first
+    const otherLanguages = languageOrder.slice(1);
+    
+    // Shuffle the other languages
+    for (let i = otherLanguages.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [otherLanguages[i], otherLanguages[j]] = [otherLanguages[j], otherLanguages[i]];
+    }
+    
+    setLanguageOrder([english, ...otherLanguages]);
+  };
 
   // Column resize handlers
   const handleColumnResizeStart = (columnKey: string, e: React.MouseEvent) => {
@@ -328,23 +369,17 @@ function App() {
       }
 
       // Create tab-separated values (TSV) format for easy Excel paste
-      const headers = languages.map(lang => lang.name).join('\t');
+      const headers = languageOrder.map(lang => lang.name).join('\t');
       const rowsData = rows
         .filter(row => row.english.trim())
         .map(row => {
-          const rowData = [
-            row.english,
-            row.translations.spanish,
-            row.translations.french,
-            row.translations.turkish,
-            row.translations.russian,
-            row.translations.ukrainian,
-            row.translations.portuguese,
-            row.translations.chinese,
-            row.translations.japanese,
-            row.translations.arabic
-          ];
-          return rowData.join('\t');
+          return languageOrder.map(lang => {
+            if (lang.key === 'english') {
+              return row.english.replace(/\t/g, ' ').replace(/\n/g, ' ');
+            } else {
+              return (row.translations[lang.key as keyof TranslationResult] || '').replace(/\t/g, ' ').replace(/\n/g, ' ');
+            }
+          }).join('\t');
         }).join('\n');
 
       const tableText = headers + '\n' + rowsData;
@@ -366,22 +401,16 @@ function App() {
       return;
     }
 
-    const headers = languages.map(lang => lang.name);
+    const headers = languageOrder.map(lang => lang.name);
     const csvData = [headers.join(',')];
     
     rows.filter(row => row.english.trim()).forEach(row => {
-      const rowData = [
-        `"${row.english.replace(/"/g, '""')}"`,
-        `"${row.translations.spanish.replace(/"/g, '""')}"`,
-        `"${row.translations.french.replace(/"/g, '""')}"`,
-        `"${row.translations.turkish.replace(/"/g, '""')}"`,
-        `"${row.translations.russian.replace(/"/g, '""')}"`,
-        `"${row.translations.ukrainian.replace(/"/g, '""')}"`,
-        `"${row.translations.portuguese.replace(/"/g, '""')}"`,
-        `"${row.translations.chinese.replace(/"/g, '""')}"`,
-        `"${row.translations.japanese.replace(/"/g, '""')}"`,
-        `"${row.translations.arabic.replace(/"/g, '""')}"`
-      ];
+      const rowData = languageOrder.map(lang => {
+        const text = lang.key === 'english' 
+          ? row.english 
+          : row.translations[lang.key as keyof TranslationResult] || '';
+        return `"${text.replace(/"/g, '""').replace(/\n/g, ' ')}"`;
+      });
       csvData.push(rowData.join(','));
     });
 
@@ -405,22 +434,16 @@ function App() {
       return;
     }
 
-    const headers = languages.map(lang => lang.name);
+    const headers = languageOrder.map(lang => lang.name);
     const data = [headers];
     
     rows.filter(row => row.english.trim()).forEach(row => {
-      data.push([
-        row.english,
-        row.translations.spanish,
-        row.translations.french,
-        row.translations.turkish,
-        row.translations.russian,
-        row.translations.ukrainian,
-        row.translations.portuguese,
-        row.translations.chinese,
-        row.translations.japanese,
-        row.translations.arabic
-      ]);
+      const rowData = languageOrder.map(lang => {
+        return lang.key === 'english' 
+          ? row.english 
+          : row.translations[lang.key as keyof TranslationResult] || '';
+      });
+      data.push(rowData);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(data);
@@ -467,6 +490,13 @@ function App() {
     };
   }, [addDebugLog]);
 
+  // Translation service change handler
+  const handleServiceChange = (service: TranslationService) => {
+    setSelectedTranslationService(service);
+    setTranslationService(service);
+    addDebugLog(`Switched to ${TRANSLATION_SERVICES[service].name}`, 'info');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-full mx-auto">
@@ -497,6 +527,45 @@ function App() {
           </div>
           
           <div className="flex items-center gap-3">
+            {/* Translation Service Selector */}
+            <div className="relative">
+              <select
+                value={selectedTranslationService}
+                onChange={(e) => handleServiceChange(e.target.value as TranslationService)}
+                className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent pr-8 appearance-none"
+              >
+                {Object.entries(TRANSLATION_SERVICES).map(([key, config]) => (
+                  <option key={key} value={key}>
+                    {config.supportsContext ? '🤖' : '🔤'} {config.name}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Service Info Badge */}
+            <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs">
+              {TRANSLATION_SERVICES[selectedTranslationService].supportsContext ? (
+                <Bot className="w-3 h-3" />
+              ) : (
+                <Zap className="w-3 h-3" />
+              )}
+              <span>{TRANSLATION_SERVICES[selectedTranslationService].description}</span>
+            </div>
+            
+            <button
+              onClick={shuffleLanguages}
+              className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200 flex items-center gap-2"
+              title="Shuffle Column Order"
+            >
+              <Shuffle className="w-4 h-4" />
+              Shuffle
+            </button>
+            
             <button
               onClick={() => setShowDebugPanel(!showDebugPanel)}
               className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 flex items-center gap-2"
@@ -549,6 +618,27 @@ function App() {
             )}
           </div>
         </div>
+
+        {/* Service Information Panel */}
+        {TRANSLATION_SERVICES[selectedTranslationService].supportsContext && (
+          <div className="mb-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Bot className="w-5 h-5 text-blue-600" />
+              <h3 className="font-semibold text-blue-900">AI-Powered Translation Active</h3>
+            </div>
+            <p className="text-sm text-blue-700">
+              {selectedTranslationService === 'huggingface' && 
+                "Using Hugging Face's Helsinki-NLP models for contextual, meaningful translations that preserve tone and intent."
+              }
+              {selectedTranslationService === 'groq' && 
+                "Using Groq's Llama AI for natural, context-aware translations that capture nuance and cultural meaning."
+              }
+              {selectedTranslationService === 'mock' && 
+                "Demo mode showing how AI translation would work with contextual understanding and natural language processing."
+              }
+            </p>
+          </div>
+        )}
 
         {/* Debug Panel */}
         {showDebugPanel && (
@@ -620,8 +710,8 @@ function App() {
                     />
                   </th>
 
-                  {/* Language Columns */}
-                  {languages.map((lang) => (
+                  {/* Language Columns with Reordering Controls */}
+                  {languageOrder.map((lang, index) => (
                     <th
                       key={lang.key}
                       className="px-4 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200 relative"
@@ -631,11 +721,35 @@ function App() {
                         maxWidth: columnWidths[lang.key]
                       }}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{lang.flag}</span>
-                        <span>{lang.name}</span>
-                        {i18n.language === 'zh' && lang.key !== 'english' && (
-                          <span className="text-xs text-gray-500">{t(lang.key)}</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{lang.flag}</span>
+                          <span>{lang.name}</span>
+                          {i18n.language === 'zh' && lang.key !== 'english' && (
+                            <span className="text-xs text-gray-500">{t(lang.key)}</span>
+                          )}
+                        </div>
+                        
+                        {/* Column Reordering Controls (only for non-English columns) */}
+                        {lang.key !== 'english' && (
+                          <div className="flex flex-col">
+                            <button
+                              onClick={() => moveLanguageUp(index)}
+                              disabled={index <= 1}
+                              className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Move Up"
+                            >
+                              <ChevronUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => moveLanguageDown(index)}
+                              disabled={index >= languageOrder.length - 1}
+                              className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Move Down"
+                            >
+                              <ChevronDown className="w-3 h-3" />
+                            </button>
+                          </div>
                         )}
                       </div>
                       {/* Column resize handle */}
@@ -689,65 +803,8 @@ function App() {
                       />
                     </td>
 
-                    {/* English Column (Editable) */}
-                    <td 
-                      className="px-4 border-b border-r border-gray-200 relative"
-                      style={{ 
-                        width: columnWidths.english, 
-                        minWidth: columnWidths.english,
-                        maxWidth: columnWidths.english,
-                        height: row.height 
-                      }}
-                    >
-                      <div className="relative h-full">
-                        <textarea
-                          value={row.english}
-                          onChange={(e) => updateEnglishText(row.id, e.target.value)}
-                          placeholder="Enter English text here..."
-                          className={`w-full h-full p-3 border rounded-md resize-none focus:ring-2 focus:border-transparent outline-none ${
-                            row.error 
-                              ? 'border-red-300 focus:ring-red-500 bg-red-50' 
-                              : 'border-gray-300 focus:ring-indigo-500'
-                          }`}
-                          style={{ whiteSpace: 'pre-wrap', minHeight: '60px' }}
-                        />
-                        {row.english && !row.error && (
-                          <button
-                            onClick={() => handleCellCopy(row.english, `${row.id}-english`)}
-                            className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                          >
-                            {copyStates[`${row.id}-english`] ? (
-                              <Check className="w-4 h-4 text-green-600" />
-                            ) : (
-                              <Copy className="w-4 h-4" />
-                            )}
-                          </button>
-                        )}
-                        {row.error && (
-                          <div className="absolute bottom-2 left-2 right-2">
-                            <div className="bg-red-100 border border-red-300 rounded-md p-2 text-xs text-red-700">
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="flex-1">{row.error}</span>
-                                <button
-                                  onClick={() => translateRow(row.id, row.english)}
-                                  className="flex-shrink-0 px-2 py-1 bg-red-200 hover:bg-red-300 rounded text-xs transition-colors"
-                                >
-                                  Retry
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {/* Row resize handle */}
-                      <div
-                        className="absolute left-0 right-0 bottom-0 h-1 cursor-row-resize hover:bg-blue-400 transition-colors opacity-0 group-hover:opacity-100"
-                        onMouseDown={(e) => handleRowResizeStart(row.id, e)}
-                      />
-                    </td>
-
-                    {/* Translation Columns */}
-                    {languages.slice(1).map((lang) => (
+                    {/* Dynamic Language Columns */}
+                    {languageOrder.map((lang) => (
                       <td 
                         key={lang.key} 
                         className="px-4 border-b border-r border-gray-200 relative"
@@ -759,54 +816,101 @@ function App() {
                         }}
                       >
                         <div className="relative h-full">
-                          <textarea
-                            value={row.translations[lang.key as keyof TranslationResult]}
-                            readOnly
-                            className="w-full h-full p-3 border border-gray-200 rounded-md resize-none bg-gray-50 text-gray-700 overflow-y-auto"
-                            style={{ 
-                              whiteSpace: 'pre-wrap',
-                              direction: lang.code === 'ar' ? 'rtl' : 'ltr',
-                              minHeight: '60px',
-                              wordWrap: 'break-word',
-                              overflowWrap: 'break-word'
-                            }}
-                          />
-                          {row.isTranslating && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 bg-opacity-95 rounded-md p-2">
-                              <Loader2 className="w-5 h-5 animate-spin text-indigo-600 mb-2" />
-                              {row.translationProgress ? (
-                                <div className="text-center">
-                                  <div className="text-xs text-gray-600 mb-1">
-                                    Translating to {row.translationProgress.currentLanguage}
-                                  </div>
-                                  <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
-                                    <div 
-                                      className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
-                                      style={{ 
-                                        width: `${Math.min(100, (row.translationProgress.chunksCompleted / row.translationProgress.chunksTotal) * 100)}%` 
-                                      }}
-                                    />
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {row.translationProgress.chunksCompleted} / {row.translationProgress.chunksTotal} chunks
+                          {lang.key === 'english' ? (
+                            // English Column (Editable)
+                            <>
+                              <textarea
+                                value={row.english}
+                                onChange={(e) => updateEnglishText(row.id, e.target.value)}
+                                placeholder="Enter English text here..."
+                                className={`w-full h-full p-3 border rounded-md resize-none focus:ring-2 focus:border-transparent outline-none ${
+                                  row.error 
+                                    ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                                    : 'border-gray-300 focus:ring-indigo-500'
+                                }`}
+                                style={{ whiteSpace: 'pre-wrap', minHeight: '60px' }}
+                              />
+                              {row.english && !row.error && (
+                                <button
+                                  onClick={() => handleCellCopy(row.english, `${row.id}-english`)}
+                                  className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                  {copyStates[`${row.id}-english`] ? (
+                                    <Check className="w-4 h-4 text-green-600" />
+                                  ) : (
+                                    <Copy className="w-4 h-4" />
+                                  )}
+                                </button>
+                              )}
+                              {row.error && (
+                                <div className="absolute bottom-2 left-2 right-2">
+                                  <div className="bg-red-100 border border-red-300 rounded-md p-2 text-xs text-red-700">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <span className="flex-1">{row.error}</span>
+                                      <button
+                                        onClick={() => translateRow(row.id, row.english)}
+                                        className="flex-shrink-0 px-2 py-1 bg-red-200 hover:bg-red-300 rounded text-xs transition-colors"
+                                      >
+                                        Retry
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
-                              ) : (
-                                <span className="text-xs text-gray-600">Preparing translation...</span>
                               )}
-                            </div>
-                          )}
-                          {row.translations[lang.key as keyof TranslationResult] && (
-                            <button
-                              onClick={() => handleCellCopy(row.translations[lang.key as keyof TranslationResult], `${row.id}-${lang.key}`)}
-                              className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                            >
-                              {copyStates[`${row.id}-${lang.key}`] ? (
-                                <Check className="w-4 h-4 text-green-600" />
-                              ) : (
-                                <Copy className="w-4 h-4" />
+                            </>
+                          ) : (
+                            // Translation Columns (Read-only)
+                            <>
+                              <textarea
+                                value={row.translations[lang.key as keyof TranslationResult]}
+                                readOnly
+                                className="w-full h-full p-3 border border-gray-200 rounded-md resize-none bg-gray-50 text-gray-700 overflow-y-auto"
+                                style={{ 
+                                  whiteSpace: 'pre-wrap',
+                                  direction: lang.code === 'ar' ? 'rtl' : 'ltr',
+                                  minHeight: '60px',
+                                  wordWrap: 'break-word',
+                                  overflowWrap: 'break-word'
+                                }}
+                              />
+                              {row.isTranslating && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 bg-opacity-95 rounded-md p-2">
+                                  <Loader2 className="w-5 h-5 animate-spin text-indigo-600 mb-2" />
+                                  {row.translationProgress ? (
+                                    <div className="text-center">
+                                      <div className="text-xs text-gray-600 mb-1">
+                                        Translating to {row.translationProgress.currentLanguage}
+                                      </div>
+                                      <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
+                                        <div 
+                                          className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                                          style={{ 
+                                            width: `${Math.min(100, (row.translationProgress.chunksCompleted / row.translationProgress.chunksTotal) * 100)}%` 
+                                          }}
+                                        />
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        {row.translationProgress.chunksCompleted} / {row.translationProgress.chunksTotal} chunks
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-gray-600">Preparing translation...</span>
+                                  )}
+                                </div>
                               )}
-                            </button>
+                              {row.translations[lang.key as keyof TranslationResult] && (
+                                <button
+                                  onClick={() => handleCellCopy(row.translations[lang.key as keyof TranslationResult], `${row.id}-${lang.key}`)}
+                                  className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                  {copyStates[`${row.id}-${lang.key}`] ? (
+                                    <Check className="w-4 h-4 text-green-600" />
+                                  ) : (
+                                    <Copy className="w-4 h-4" />
+                                  )}
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                         {/* Row resize handle */}
