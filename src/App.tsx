@@ -1,8 +1,15 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Globe, Loader2, X, Bold, Italic, Underline, Download, FileSpreadsheet } from 'lucide-react';
+import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet } from 'lucide-react';
 import { translateText, TranslationResult } from './services/translationService';
 import * as XLSX from 'xlsx';
+
+interface TableRow {
+  id: string;
+  english: string;
+  translations: TranslationResult;
+  isTranslating: boolean;
+}
 
 interface CopyState {
   [key: string]: boolean;
@@ -10,181 +17,183 @@ interface CopyState {
 
 function App() {
   const { t, i18n } = useTranslation();
-  const [inputText, setInputText] = useState('');
-  const [translations, setTranslations] = useState<TranslationResult>({
-    spanish: '',
-    french: '',
-    turkish: '',
-    russian: '',
-    ukrainian: '',
-    portuguese: '',
-    chinese: '',
-    japanese: '',
-    arabic: ''
-  });
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [error, setError] = useState('');
+  const [rows, setRows] = useState<TableRow[]>([
+    {
+      id: '1',
+      english: '',
+      translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' },
+      isTranslating: false
+    }
+  ]);
   const [copyStates, setCopyStates] = useState<CopyState>({});
-  const editorRef = useRef<HTMLDivElement>(null);
+  const [globalCopied, setGlobalCopied] = useState(false);
 
-  // Extract plain text from HTML content for translation while preserving line breaks
-  const getPlainText = (html: string) => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
+  // Language configurations
+  const languages = [
+    { key: 'english', name: 'English', flag: '🇺🇸', code: 'en' },
+    { key: 'spanish', name: 'Spanish', flag: '🇪🇸', code: 'es' },
+    { key: 'french', name: 'French', flag: '🇫🇷', code: 'fr' },
+    { key: 'turkish', name: 'Turkish', flag: '🇹🇷', code: 'tr' },
+    { key: 'russian', name: 'Russian', flag: '🇷🇺', code: 'ru' },
+    { key: 'ukrainian', name: 'Ukrainian', flag: '🇺🇦', code: 'uk' },
+    { key: 'portuguese', name: 'Portuguese', flag: '🇵🇹', code: 'pt' },
+    { key: 'chinese', name: 'Chinese', flag: '🇨🇳', code: 'zh' },
+    { key: 'japanese', name: 'Japanese', flag: '🇯🇵', code: 'ja' },
+    { key: 'arabic', name: 'Arabic', flag: '🇸🇦', code: 'ar' }
+  ];
+
+  // Debounced translation for individual rows
+  const translateRow = useCallback(async (rowId: string, text: string) => {
+    if (!text.trim()) {
+      setRows(prev => prev.map(row => 
+        row.id === rowId 
+          ? { ...row, translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' } }
+          : row
+      ));
+      return;
+    }
+
+    setRows(prev => prev.map(row => 
+      row.id === rowId ? { ...row, isTranslating: true } : row
+    ));
+
+    try {
+      const result = await translateText(text);
+      setRows(prev => prev.map(row => 
+        row.id === rowId 
+          ? { ...row, translations: result, isTranslating: false }
+          : row
+      ));
+    } catch (error) {
+      console.error('Translation failed:', error);
+      setRows(prev => prev.map(row => 
+        row.id === rowId ? { ...row, isTranslating: false } : row
+      ));
+    }
+  }, []);
+
+  // Debounce implementation
+  useEffect(() => {
+    const timeouts: { [key: string]: NodeJS.Timeout } = {};
     
-    // Replace <br> tags and block elements with line breaks
-    const htmlWithBreaks = html
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/?(div|p|h[1-6]|li|blockquote)[^>]*>/gi, '\n')
-      .replace(/<[^>]*>/g, ''); // Remove remaining HTML tags
-    
-    // Create a temporary element to decode HTML entities
-    const tempElement = document.createElement('div');
-    tempElement.innerHTML = htmlWithBreaks;
-    const text = tempElement.textContent || tempElement.innerText || '';
-    
-    // Clean up excessive line breaks and return
-    return text.replace(/\n\s*\n/g, '\n').trim();
+    rows.forEach(row => {
+      if (row.english && row.english.trim()) {
+        timeouts[row.id] = setTimeout(() => {
+          translateRow(row.id, row.english);
+        }, 500);
+      }
+    });
+
+    return () => {
+      Object.values(timeouts).forEach(timeout => clearTimeout(timeout));
+    };
+  }, [rows.map(row => row.english).join('|'), translateRow]);
+
+  // Add new row
+  const addRow = () => {
+    const newRow: TableRow = {
+      id: Date.now().toString(),
+      english: '',
+      translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' },
+      isTranslating: false
+    };
+    setRows(prev => [...prev, newRow]);
   };
 
-  // Debounced translation
-  const debounceTranslate = useCallback(() => {
-    const timeoutId = setTimeout(async () => {
-      const plainText = getPlainText(inputText);
-      if (plainText.trim()) {
-        setIsTranslating(true);
-        setError('');
-        try {
-          const result = await translateText(plainText);
-          setTranslations(result);
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : t('error');
-          setError(errorMessage);
-          console.error('Translation failed:', err);
-        } finally {
-          setIsTranslating(false);
-        }
-      } else {
-        setTranslations({ 
-          spanish: '', 
-          french: '', 
-          turkish: '', 
-          russian: '', 
-          ukrainian: '', 
-          portuguese: '', 
-          chinese: '', 
-          japanese: '', 
-          arabic: '' 
-        });
-      }
-    }, 500);
+  // Remove row
+  const removeRow = (rowId: string) => {
+    if (rows.length > 1) {
+      setRows(prev => prev.filter(row => row.id !== rowId));
+    }
+  };
 
-    return () => clearTimeout(timeoutId);
-  }, [inputText, t]);
+  // Update English text
+  const updateEnglishText = (rowId: string, text: string) => {
+    setRows(prev => prev.map(row => 
+      row.id === rowId ? { ...row, english: text } : row
+    ));
+  };
 
-  useEffect(() => {
-    const cleanup = debounceTranslate();
-    return cleanup;
-  }, [debounceTranslate]);
-
-  const handleCopy = async (text: string, language: string) => {
+  // Copy individual cell
+  const handleCellCopy = async (text: string, cellId: string) => {
     try {
-      // For English, extract plain text from HTML
-      const textToCopy = language === 'english' ? getPlainText(text) : text;
-      await navigator.clipboard.writeText(textToCopy);
-      setCopyStates(prev => ({ ...prev, [language]: true }));
+      await navigator.clipboard.writeText(text);
+      setCopyStates(prev => ({ ...prev, [cellId]: true }));
       setTimeout(() => {
-        setCopyStates(prev => ({ ...prev, [language]: false }));
+        setCopyStates(prev => ({ ...prev, [cellId]: false }));
       }, 2000);
     } catch (err) {
       console.error('Failed to copy text:', err);
     }
   };
 
-  const formatText = (command: string) => {
-    document.execCommand(command, false);
-    if (editorRef.current) {
-      setInputText(editorRef.current.innerHTML);
+  // Universal copy - copy entire table
+  const copyEntireTable = async () => {
+    try {
+      const hasContent = rows.some(row => row.english.trim());
+      if (!hasContent) {
+        alert('Please add some content to copy');
+        return;
+      }
+
+      // Create tab-separated values (TSV) format for easy Excel paste
+      const headers = languages.map(lang => lang.name).join('\t');
+      const rowsData = rows
+        .filter(row => row.english.trim())
+        .map(row => {
+          const rowData = [
+            row.english,
+            row.translations.spanish,
+            row.translations.french,
+            row.translations.turkish,
+            row.translations.russian,
+            row.translations.ukrainian,
+            row.translations.portuguese,
+            row.translations.chinese,
+            row.translations.japanese,
+            row.translations.arabic
+          ];
+          return rowData.join('\t');
+        }).join('\n');
+
+      const tableText = headers + '\n' + rowsData;
+      await navigator.clipboard.writeText(tableText);
+      
+      setGlobalCopied(true);
+      setTimeout(() => setGlobalCopied(false), 3000);
+    } catch (err) {
+      console.error('Failed to copy table:', err);
+      alert('Failed to copy table. Please try again.');
     }
   };
 
-  const handleEditorInput = () => {
-    if (editorRef.current) {
-      setInputText(editorRef.current.innerHTML);
-    }
-  };
-
-  const handleClear = () => {
-    setInputText('');
-    setTranslations({ 
-      spanish: '', 
-      french: '', 
-      turkish: '', 
-      russian: '', 
-      ukrainian: '', 
-      portuguese: '', 
-      chinese: '', 
-      japanese: '', 
-      arabic: '' 
-    });
-    setError('');
-    if (editorRef.current) {
-      editorRef.current.innerHTML = '';
-    }
-  };
-
-  const toggleLanguage = () => {
-    i18n.changeLanguage(i18n.language === 'en' ? 'zh' : 'en');
-  };
-
-  // Export functions
+  // Export to CSV
   const exportToCSV = () => {
-    const englishText = getPlainText(inputText);
-    if (!englishText.trim()) {
-      alert('Please enter some text to export');
+    const hasContent = rows.some(row => row.english.trim());
+    if (!hasContent) {
+      alert('Please add some content to export');
       return;
     }
 
-    // Split text into lines
-    const lines = englishText.split('\n').filter(line => line.trim());
+    const headers = languages.map(lang => lang.name);
+    const csvData = [headers.join(',')];
     
-    // Create CSV headers
-    const headers = ['English', 'Spanish', 'French', 'Turkish', 'Russian', 'Ukrainian', 'Portuguese', 'Chinese', 'Japanese', 'Arabic'];
-    
-    // Create CSV data rows
-    const csvData = [];
-    csvData.push(headers.join(','));
-    
-    // For each line, get the corresponding translation line
-    lines.forEach((line, index) => {
-      const translationLines = {
-        spanish: translations.spanish.split('\n').filter(l => l.trim()),
-        french: translations.french.split('\n').filter(l => l.trim()),
-        turkish: translations.turkish.split('\n').filter(l => l.trim()),
-        russian: translations.russian.split('\n').filter(l => l.trim()),
-        ukrainian: translations.ukrainian.split('\n').filter(l => l.trim()),
-        portuguese: translations.portuguese.split('\n').filter(l => l.trim()),
-        chinese: translations.chinese.split('\n').filter(l => l.trim()),
-        japanese: translations.japanese.split('\n').filter(l => l.trim()),
-        arabic: translations.arabic.split('\n').filter(l => l.trim())
-      };
-
-      const row = [
-        `"${line.replace(/"/g, '""')}"`,
-        `"${(translationLines.spanish[index] || '').replace(/"/g, '""')}"`,
-        `"${(translationLines.french[index] || '').replace(/"/g, '""')}"`,
-        `"${(translationLines.turkish[index] || '').replace(/"/g, '""')}"`,
-        `"${(translationLines.russian[index] || '').replace(/"/g, '""')}"`,
-        `"${(translationLines.ukrainian[index] || '').replace(/"/g, '""')}"`,
-        `"${(translationLines.portuguese[index] || '').replace(/"/g, '""')}"`,
-        `"${(translationLines.chinese[index] || '').replace(/"/g, '""')}"`,
-        `"${(translationLines.japanese[index] || '').replace(/"/g, '""')}"`,
-        `"${(translationLines.arabic[index] || '').replace(/"/g, '""')}"`
+    rows.filter(row => row.english.trim()).forEach(row => {
+      const rowData = [
+        `"${row.english.replace(/"/g, '""')}"`,
+        `"${row.translations.spanish.replace(/"/g, '""')}"`,
+        `"${row.translations.french.replace(/"/g, '""')}"`,
+        `"${row.translations.turkish.replace(/"/g, '""')}"`,
+        `"${row.translations.russian.replace(/"/g, '""')}"`,
+        `"${row.translations.ukrainian.replace(/"/g, '""')}"`,
+        `"${row.translations.portuguese.replace(/"/g, '""')}"`,
+        `"${row.translations.chinese.replace(/"/g, '""')}"`,
+        `"${row.translations.japanese.replace(/"/g, '""')}"`,
+        `"${row.translations.arabic.replace(/"/g, '""')}"`
       ];
-      csvData.push(row.join(','));
+      csvData.push(rowData.join(','));
     });
 
-    // Download CSV file
     const csvContent = csvData.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -197,82 +206,53 @@ function App() {
     document.body.removeChild(link);
   };
 
+  // Export to Excel
   const exportToExcel = () => {
-    const englishText = getPlainText(inputText);
-    if (!englishText.trim()) {
-      alert('Please enter some text to export');
+    const hasContent = rows.some(row => row.english.trim());
+    if (!hasContent) {
+      alert('Please add some content to export');
       return;
     }
 
-    // Split text into lines
-    const lines = englishText.split('\n').filter(line => line.trim());
+    const headers = languages.map(lang => lang.name);
+    const data = [headers];
     
-    // Create Excel data
-    const data = [];
-    
-    // Headers
-    data.push(['English', 'Spanish', 'French', 'Turkish', 'Russian', 'Ukrainian', 'Portuguese', 'Chinese', 'Japanese', 'Arabic']);
-    
-    // For each line, get the corresponding translation line
-    lines.forEach((line, index) => {
-      const translationLines = {
-        spanish: translations.spanish.split('\n').filter(l => l.trim()),
-        french: translations.french.split('\n').filter(l => l.trim()),
-        turkish: translations.turkish.split('\n').filter(l => l.trim()),
-        russian: translations.russian.split('\n').filter(l => l.trim()),
-        ukrainian: translations.ukrainian.split('\n').filter(l => l.trim()),
-        portuguese: translations.portuguese.split('\n').filter(l => l.trim()),
-        chinese: translations.chinese.split('\n').filter(l => l.trim()),
-        japanese: translations.japanese.split('\n').filter(l => l.trim()),
-        arabic: translations.arabic.split('\n').filter(l => l.trim())
-      };
-
+    rows.filter(row => row.english.trim()).forEach(row => {
       data.push([
-        line,
-        translationLines.spanish[index] || '',
-        translationLines.french[index] || '',
-        translationLines.turkish[index] || '',
-        translationLines.russian[index] || '',
-        translationLines.ukrainian[index] || '',
-        translationLines.portuguese[index] || '',
-        translationLines.chinese[index] || '',
-        translationLines.japanese[index] || '',
-        translationLines.arabic[index] || ''
+        row.english,
+        row.translations.spanish,
+        row.translations.french,
+        row.translations.turkish,
+        row.translations.russian,
+        row.translations.ukrainian,
+        row.translations.portuguese,
+        row.translations.chinese,
+        row.translations.japanese,
+        row.translations.arabic
       ]);
     });
 
-    // Create workbook and worksheet
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Translations');
-
-    // Download Excel file
     XLSX.writeFile(wb, `TranslateX_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // Define available languages with their configurations
-  const targetLanguages = [
-    { key: 'spanish', flag: '🇪🇸', code: 'es' },
-    { key: 'french', flag: '🇫🇷', code: 'fr' },
-    { key: 'turkish', flag: '🇹🇷', code: 'tr' },
-    { key: 'russian', flag: '🇷🇺', code: 'ru' },
-    { key: 'ukrainian', flag: '🇺🇦', code: 'uk' },
-    { key: 'portuguese', flag: '🇵🇹', code: 'pt' },
-    { key: 'chinese', flag: '🇨🇳', code: 'zh' },
-    { key: 'japanese', flag: '🇯🇵', code: 'ja' },
-    { key: 'arabic', flag: '🇸🇦', code: 'ar' }
-  ];
+  const toggleLanguage = () => {
+    i18n.changeLanguage(i18n.language === 'en' ? 'zh' : 'en');
+  };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex flex-col">
-      <div className="w-full flex flex-col flex-1">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-full mx-auto">
         {/* Header */}
-        <div className="text-center mb-6 flex-shrink-0">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <Globe className="w-6 h-6 text-indigo-600" />
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Globe className="w-8 h-8 text-indigo-600" />
             <h1 className="text-3xl font-bold text-gray-800">{t('title')}</h1>
           </div>
-          <div className="flex items-center justify-center gap-3 flex-wrap">
+          
+          <div className="flex items-center gap-3">
             <button
               onClick={toggleLanguage}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200"
@@ -280,183 +260,174 @@ function App() {
               {t('switchLanguage')}
             </button>
             
-            {/* Export Buttons */}
-            {inputText && getPlainText(inputText).trim() && (
+            {rows.some(row => row.english.trim()) && (
               <>
                 <button
                   onClick={exportToCSV}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center gap-2"
-                  title="Export as CSV"
                 >
                   <Download className="w-4 h-4" />
-                  Export CSV
+                  CSV
                 </button>
                 <button
                   onClick={exportToExcel}
                   className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 flex items-center gap-2"
-                  title="Export as Excel"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
-                  Export Excel
+                  Excel
+                </button>
+                <button
+                  onClick={copyEntireTable}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center gap-2 font-medium"
+                >
+                  {globalCopied ? (
+                    <>
+                      <Check className="w-5 h-5" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-5 h-5" />
+                      Copy Table
+                    </>
+                  )}
                 </button>
               </>
             )}
           </div>
         </div>
 
-        {/* Translation Interface */}
-        <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
-          {/* English Input */}
-          <div className="lg:w-1/3 bg-white rounded-lg shadow-lg p-6 flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-                <span className="text-2xl">🇺🇸</span>
-                {t('english')} <span className="text-sm text-gray-500">英文</span>
-              </h2>
-              {inputText && getPlainText(inputText).trim() && (
-                <button
-                  onClick={handleClear}
-                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                  title={t('clearText')}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-            {/* Rich Text Formatting Toolbar */}
-            <div className="flex gap-2 mb-3 p-2 bg-gray-50 rounded-lg border">
-              <button
-                onClick={() => formatText('bold')}
-                className="p-2 hover:bg-gray-200 rounded transition-colors"
-                title="Bold"
-                type="button"
-              >
-                <Bold className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => formatText('italic')}
-                className="p-2 hover:bg-gray-200 rounded transition-colors"
-                title="Italic"
-                type="button"
-              >
-                <Italic className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => formatText('underline')}
-                className="p-2 hover:bg-gray-200 rounded transition-colors"
-                title="Underline"
-                type="button"
-              >
-                <Underline className="w-4 h-4" />
-              </button>
-            </div>
-            
-            {/* Rich Text Editor */}
-            <div
-              ref={editorRef}
-              contentEditable
-              onInput={handleEditorInput}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  document.execCommand('insertHTML', false, '<br><br>');
-                }
-              }}
-              onPaste={(e) => {
-                e.preventDefault();
-                const text = e.clipboardData.getData('text/plain');
-                const formattedText = text.replace(/\n/g, '<br>');
-                document.execCommand('insertHTML', false, formattedText);
-              }}
-              className="flex-1 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white overflow-y-auto"
-              style={{ 
-                wordWrap: 'break-word',
-                whiteSpace: 'pre-wrap'
-              }}
-              data-placeholder={t('enterText')}
-            />
-            <button
-              onClick={() => handleCopy(inputText, 'english')}
-              disabled={!inputText || !getPlainText(inputText).trim()}
-              className="w-full mt-4 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors duration-200 flex items-center justify-center gap-2"
-            >
-              {copyStates.english ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  {t('copied')}
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  {t('copy')}
-                </>
-              )}
-            </button>
-          </div>
+        {/* Table */}
+        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              {/* Table Header */}
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="w-12 px-3 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200">
+                    #
+                  </th>
+                  {languages.map((lang) => (
+                    <th
+                      key={lang.key}
+                      className="px-4 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200 min-w-[200px]"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{lang.flag}</span>
+                        <span>{lang.name}</span>
+                        {i18n.language === 'zh' && lang.key !== 'english' && (
+                          <span className="text-xs text-gray-500">{t(lang.key)}</span>
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                  <th className="w-16 px-3 py-4 text-center text-sm font-medium text-gray-700 border-b border-gray-200">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
 
-          {/* Translation Results with Horizontal Scroll */}
-          <div className="flex-1 overflow-hidden">
-            <div className="h-full overflow-x-auto pb-4">
-              <div className="flex h-full gap-6" style={{ width: `${Math.ceil(targetLanguages.length / 3) * 100}%` }}>
-                {Array.from({ length: Math.ceil(targetLanguages.length / 3) }, (_, pageIndex) => (
-                  <div key={pageIndex} className="grid grid-cols-3 gap-6 h-full flex-shrink-0" style={{ width: `${100 / Math.ceil(targetLanguages.length / 3)}%` }}>
-                    {targetLanguages.slice(pageIndex * 3, (pageIndex + 1) * 3).map((lang) => (
-                      <div key={lang.key} className="bg-white rounded-lg shadow-lg p-6 flex flex-col h-full">
-                        <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2 flex-shrink-0">
-                          <span className="text-2xl">{lang.flag}</span>
-                          {t(lang.key)} <span className="text-sm text-gray-500">{i18n.language === 'zh' ? t(lang.key) : ''}</span>
-                        </h2>
-                        <div className="relative flex-1 mb-4">
+              {/* Table Body */}
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={row.id} className="hover:bg-gray-50">
+                    {/* Row Number */}
+                    <td className="px-3 py-4 text-sm text-gray-500 border-b border-r border-gray-200 text-center">
+                      {index + 1}
+                    </td>
+
+                    {/* English Column (Editable) */}
+                    <td className="px-4 py-4 border-b border-r border-gray-200">
+                      <div className="relative">
+                        <textarea
+                          value={row.english}
+                          onChange={(e) => updateEnglishText(row.id, e.target.value)}
+                          placeholder="Enter English text here..."
+                          className="w-full min-h-[60px] p-3 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                          style={{ whiteSpace: 'pre-wrap' }}
+                        />
+                        {row.english && (
+                          <button
+                            onClick={() => handleCellCopy(row.english, `${row.id}-english`)}
+                            className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            {copyStates[`${row.id}-english`] ? (
+                              <Check className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Translation Columns */}
+                    {languages.slice(1).map((lang) => (
+                      <td key={lang.key} className="px-4 py-4 border-b border-r border-gray-200">
+                        <div className="relative">
                           <textarea
-                            value={translations[lang.key as keyof TranslationResult]}
+                            value={row.translations[lang.key as keyof TranslationResult]}
                             readOnly
-                            placeholder={isTranslating ? t('translating') : ''}
-                            className="w-full h-full p-4 border border-gray-300 rounded-lg resize-none bg-gray-50 text-gray-700"
-                            style={{ whiteSpace: 'pre-wrap', direction: lang.code === 'ar' ? 'rtl' : 'ltr' }}
+                            className="w-full min-h-[60px] p-3 border border-gray-200 rounded-md resize-none bg-gray-50 text-gray-700"
+                            style={{ 
+                              whiteSpace: 'pre-wrap',
+                              direction: lang.code === 'ar' ? 'rtl' : 'ltr'
+                            }}
                           />
-                          {isTranslating && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 bg-opacity-75 rounded-lg">
-                              <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                          {row.isTranslating && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 bg-opacity-75 rounded-md">
+                              <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
                             </div>
                           )}
-                        </div>
-                        <button
-                          onClick={() => handleCopy(translations[lang.key as keyof TranslationResult], lang.key)}
-                          disabled={!translations[lang.key as keyof TranslationResult] || isTranslating}
-                          className="w-full px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors duration-200 flex items-center justify-center gap-2 flex-shrink-0"
-                        >
-                          {copyStates[lang.key] ? (
-                            <>
-                              <Check className="w-4 h-4" />
-                              {t('copied')}
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4" />
-                              {t('copy')}
-                            </>
+                          {row.translations[lang.key as keyof TranslationResult] && (
+                            <button
+                              onClick={() => handleCellCopy(row.translations[lang.key as keyof TranslationResult], `${row.id}-${lang.key}`)}
+                              className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                              {copyStates[`${row.id}-${lang.key}`] ? (
+                                <Check className="w-4 h-4 text-green-600" />
+                              ) : (
+                                <Copy className="w-4 h-4" />
+                              )}
+                            </button>
                           )}
-                        </button>
-                      </div>
+                        </div>
+                      </td>
                     ))}
-                  </div>
+
+                    {/* Actions Column */}
+                    <td className="px-3 py-4 border-b border-gray-200 text-center">
+                      <button
+                        onClick={() => removeRow(row.id)}
+                        disabled={rows.length === 1}
+                        className="p-2 text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete Row"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
                 ))}
-              </div>
-            </div>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Add Row Button */}
+          <div className="p-4 border-t border-gray-200 bg-gray-50">
+            <button
+              onClick={addRow}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200"
+            >
+              <Plus className="w-4 h-4" />
+              Add Row
+            </button>
           </div>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg flex-shrink-0">
-            {error}
-          </div>
-        )}
-
         {/* Footer */}
-        <div className="mt-4 text-center text-gray-600 flex-shrink-0">
-          <p className="text-xs">
-            TranslateX - Universal Translator | Built with React + TypeScript
+        <div className="mt-6 text-center text-gray-600">
+          <p className="text-sm">
+            TranslateX - Universal Translation Table | Built for Team Operations
           </p>
         </div>
       </div>
