@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet, Settings, X, ChevronUp, ChevronDown, Shuffle, Bot, Zap } from 'lucide-react';
-import { translateText, TranslationResult, setTranslationService, getCurrentService, TRANSLATION_SERVICES, TranslationService } from './services/translationService';
+import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet, ChevronUp, ChevronDown } from 'lucide-react';
+import { translateText, TranslationResult } from './services/translationService';
 import * as XLSX from 'xlsx';
 
 interface TableRow {
@@ -70,9 +70,6 @@ function App() {
     failedTranslations: 0,
     lastTranslationTime: null as Date | null
   });
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<Array<{ timestamp: string; message: string; type: 'info' | 'error' | 'success' }>>([]);
-  const [selectedTranslationService, setSelectedTranslationService] = useState<TranslationService>('huggingface');
 
   // Default language order (English first, others can be reordered)
   const [languageOrder, setLanguageOrder] = useState<Language[]>([
@@ -106,19 +103,6 @@ function App() {
   const moveLanguageDown = (index: number) => {
     if (index === 0 || index >= languageOrder.length - 1) return; // Can't move English or last column down
     moveLanguage(index, index + 1);
-  };
-
-  const shuffleLanguages = () => {
-    const english = languageOrder[0]; // Keep English first
-    const otherLanguages = languageOrder.slice(1);
-    
-    // Shuffle the other languages
-    for (let i = otherLanguages.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [otherLanguages[i], otherLanguages[j]] = [otherLanguages[j], otherLanguages[i]];
-    }
-    
-    setLanguageOrder([english, ...otherLanguages]);
   };
 
   // Column resize handlers
@@ -456,47 +440,6 @@ function App() {
     i18n.changeLanguage(i18n.language === 'en' ? 'zh' : 'en');
   };
 
-  // Add debug logging function
-  const addDebugLog = useCallback((message: string, type: 'info' | 'error' | 'success' = 'info') => {
-    const timestamp = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [...prev.slice(-50), { timestamp, message, type }]); // Keep last 50 logs
-  }, []);
-
-  // Override console methods to capture logs
-  useEffect(() => {
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    const originalConsoleWarn = console.warn;
-
-    console.log = (...args) => {
-      originalConsoleLog(...args);
-      addDebugLog(args.join(' '), 'info');
-    };
-
-    console.error = (...args) => {
-      originalConsoleError(...args);
-      addDebugLog(args.join(' '), 'error');
-    };
-
-    console.warn = (...args) => {
-      originalConsoleWarn(...args);
-      addDebugLog(args.join(' '), 'error');
-    };
-
-    return () => {
-      console.log = originalConsoleLog;
-      console.error = originalConsoleError;
-      console.warn = originalConsoleWarn;
-    };
-  }, [addDebugLog]);
-
-  // Translation service change handler
-  const handleServiceChange = (service: TranslationService) => {
-    setSelectedTranslationService(service);
-    setTranslationService(service);
-    addDebugLog(`Switched to ${TRANSLATION_SERVICES[service].name}`, 'info');
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-full mx-auto">
@@ -527,54 +470,6 @@ function App() {
           </div>
           
           <div className="flex items-center gap-3">
-            {/* Translation Service Selector */}
-            <div className="relative">
-              <select
-                value={selectedTranslationService}
-                onChange={(e) => handleServiceChange(e.target.value as TranslationService)}
-                className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent pr-8 appearance-none"
-              >
-                {Object.entries(TRANSLATION_SERVICES).map(([key, config]) => (
-                  <option key={key} value={key}>
-                    {config.supportsContext ? '🤖' : '🔤'} {config.name}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </div>
-
-            {/* Service Info Badge */}
-            <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs">
-              {TRANSLATION_SERVICES[selectedTranslationService].supportsContext ? (
-                <Bot className="w-3 h-3" />
-              ) : (
-                <Zap className="w-3 h-3" />
-              )}
-              <span>{TRANSLATION_SERVICES[selectedTranslationService].description}</span>
-            </div>
-            
-            <button
-              onClick={shuffleLanguages}
-              className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200 flex items-center gap-2"
-              title="Shuffle Column Order"
-            >
-              <Shuffle className="w-4 h-4" />
-              Shuffle
-            </button>
-            
-            <button
-              onClick={() => setShowDebugPanel(!showDebugPanel)}
-              className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 flex items-center gap-2"
-              title="Toggle Debug Panel"
-            >
-              <Settings className="w-4 h-4" />
-              Debug
-            </button>
-            
             <button
               onClick={toggleLanguage}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200"
@@ -618,65 +513,6 @@ function App() {
             )}
           </div>
         </div>
-
-        {/* Service Information Panel */}
-        {TRANSLATION_SERVICES[selectedTranslationService].supportsContext && (
-          <div className="mb-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Bot className="w-5 h-5 text-blue-600" />
-              <h3 className="font-semibold text-blue-900">AI-Powered Translation Active</h3>
-            </div>
-            <p className="text-sm text-blue-700">
-              {selectedTranslationService === 'huggingface' && 
-                "Using Hugging Face's Helsinki-NLP models for contextual, meaningful translations that preserve tone and intent."
-              }
-              {selectedTranslationService === 'groq' && 
-                "Using Groq's Llama AI for natural, context-aware translations that capture nuance and cultural meaning."
-              }
-              {selectedTranslationService === 'mock' && 
-                "Demo mode showing how AI translation would work with contextual understanding and natural language processing."
-              }
-            </p>
-          </div>
-        )}
-
-        {/* Debug Panel */}
-        {showDebugPanel && (
-          <div className="mb-6 bg-gray-900 text-white rounded-lg overflow-hidden">
-            <div className="flex items-center justify-between p-3 bg-gray-800">
-              <h3 className="font-semibold">Debug Console</h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setDebugLogs([])}
-                  className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={() => setShowDebugPanel(false)}
-                  className="p-1 hover:bg-gray-700 rounded"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div className="max-h-64 overflow-y-auto p-3 space-y-1 text-sm font-mono">
-              {debugLogs.length === 0 ? (
-                <div className="text-gray-400">No debug messages yet. Try translating some text.</div>
-              ) : (
-                debugLogs.map((log, index) => (
-                  <div key={index} className={`flex gap-2 ${
-                    log.type === 'error' ? 'text-red-300' : 
-                    log.type === 'success' ? 'text-green-300' : 'text-gray-300'
-                  }`}>
-                    <span className="text-gray-500 text-xs min-w-[60px]">{log.timestamp}</span>
-                    <span className="break-all">{log.message}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Table */}
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
