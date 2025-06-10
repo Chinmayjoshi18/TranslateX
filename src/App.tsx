@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet } from 'lucide-react';
+import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet, Settings, X } from 'lucide-react';
 import { translateText, TranslationResult } from './services/translationService';
 import * as XLSX from 'xlsx';
 
@@ -63,6 +63,8 @@ function App() {
     failedTranslations: 0,
     lastTranslationTime: null as Date | null
   });
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<Array<{ timestamp: string; message: string; type: 'info' | 'error' | 'success' }>>([]);
 
   // Language configurations
   const languages = [
@@ -431,6 +433,40 @@ function App() {
     i18n.changeLanguage(i18n.language === 'en' ? 'zh' : 'en');
   };
 
+  // Add debug logging function
+  const addDebugLog = useCallback((message: string, type: 'info' | 'error' | 'success' = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [...prev.slice(-50), { timestamp, message, type }]); // Keep last 50 logs
+  }, []);
+
+  // Override console methods to capture logs
+  useEffect(() => {
+    const originalConsoleLog = console.log;
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+
+    console.log = (...args) => {
+      originalConsoleLog(...args);
+      addDebugLog(args.join(' '), 'info');
+    };
+
+    console.error = (...args) => {
+      originalConsoleError(...args);
+      addDebugLog(args.join(' '), 'error');
+    };
+
+    console.warn = (...args) => {
+      originalConsoleWarn(...args);
+      addDebugLog(args.join(' '), 'error');
+    };
+
+    return () => {
+      console.log = originalConsoleLog;
+      console.error = originalConsoleError;
+      console.warn = originalConsoleWarn;
+    };
+  }, [addDebugLog]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-full mx-auto">
@@ -461,6 +497,15 @@ function App() {
           </div>
           
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowDebugPanel(!showDebugPanel)}
+              className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 flex items-center gap-2"
+              title="Toggle Debug Panel"
+            >
+              <Settings className="w-4 h-4" />
+              Debug
+            </button>
+            
             <button
               onClick={toggleLanguage}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200"
@@ -504,6 +549,44 @@ function App() {
             )}
           </div>
         </div>
+
+        {/* Debug Panel */}
+        {showDebugPanel && (
+          <div className="mb-6 bg-gray-900 text-white rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between p-3 bg-gray-800">
+              <h3 className="font-semibold">Debug Console</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDebugLogs([])}
+                  className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setShowDebugPanel(false)}
+                  className="p-1 hover:bg-gray-700 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="max-h-64 overflow-y-auto p-3 space-y-1 text-sm font-mono">
+              {debugLogs.length === 0 ? (
+                <div className="text-gray-400">No debug messages yet. Try translating some text.</div>
+              ) : (
+                debugLogs.map((log, index) => (
+                  <div key={index} className={`flex gap-2 ${
+                    log.type === 'error' ? 'text-red-300' : 
+                    log.type === 'success' ? 'text-green-300' : 'text-gray-300'
+                  }`}>
+                    <span className="text-gray-500 text-xs min-w-[60px]">{log.timestamp}</span>
+                    <span className="break-all">{log.message}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Table */}
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
