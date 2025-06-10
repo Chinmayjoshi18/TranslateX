@@ -11,18 +11,17 @@ A powerful, professional translation table application built with React, TypeScr
 - **Dynamic Exports**: All export formats (CSV, Excel, Copy) respect your custom column order
 
 ### 🤖 AI-Powered Meaningful Translations  
-- **Multiple AI Services**: Choose from Hugging Face, Groq, Google Translate, or Demo mode
-- **Contextual Understanding**: AI services provide natural, meaningful translations vs. robotic word-for-word
-- **Free & Open Source**: Hugging Face and Groq offer generous free tiers
-- **Service Indicator**: Clear visual indicators show which translation engine is active
-- **Intelligent Processing**: Respects tone, context, and cultural nuances
+- **OpenAI Integration**: Uses GPT-3.5-turbo for contextual, meaningful translations
+- **Intelligent Fallback**: Automatically falls back to Google Translate if needed
+- **Natural Language Processing**: AI provides natural translations vs. robotic word-for-word
+- **Context Awareness**: Preserves tone, intent, and cultural nuances
 
 ## ✨ Core Features
 
 ### Advanced Translation Engine
-- **Enterprise Reliability**: 95%+ success rate with intelligent retry logic
+- **AI-First Approach**: OpenAI GPT-3.5-turbo for intelligent, contextual translations
+- **Automatic Fallback**: Google Translate backup ensures 95%+ success rate
 - **Unlimited Content**: Handles 10,000+ character texts through smart chunking
-- **Multiple AI Options**: Choose between basic (Google) or advanced AI translation
 - **Rate Protection**: Built-in API throttling prevents service blocks
 - **Real-time Progress**: Live progress bars and translation statistics
 - **Error Recovery**: Automatic retry with exponential backoff for failed translations
@@ -40,11 +39,11 @@ A powerful, professional translation table application built with React, TypeScr
 - **Custom Timestamps**: Organized exports with automatic date naming
 - **Bulk Operations**: Copy entire table or individual translations
 
-### Developer-Friendly
-- **Debug Console**: Real-time translation logs and error tracking
-- **Service Switching**: Hot-swap between translation providers
-- **Rate Monitoring**: Visual feedback on API usage and limits
-- **Extensible Architecture**: Easy to add new translation services
+### Clean, Professional Interface
+- **Streamlined Design**: Focused on essential translation workflow
+- **Column Reordering**: Easy up/down arrows to customize language order
+- **Translation Statistics**: Real-time success/failure tracking
+- **Responsive Layout**: Works perfectly on desktop, tablet, and mobile
 
 ## 🌍 Supported Languages
 
@@ -86,7 +85,8 @@ A powerful, professional translation table application built with React, TypeScr
 - **Icons**: Lucide React for consistent iconography
 - **Exports**: SheetJS for Excel functionality
 - **Build Tool**: Vite for fast development and optimized builds
-- **Translation APIs**: Google Translate, Hugging Face Transformers, Groq AI
+- **AI Translation**: OpenAI GPT-3.5-turbo (free tier)
+- **Fallback**: Google Translate for reliability
 
 ## 🚀 Getting Started
 
@@ -111,27 +111,26 @@ A powerful, professional translation table application built with React, TypeScr
 
 ## 🔧 Configuration
 
-### Translation Services
+### Translation Service
 
-#### Hugging Face (Recommended - Free)
-- Uses Helsinki-NLP models for high-quality translations
-- Completely free with generous rate limits
-- Best for meaningful, contextual translations
+#### OpenAI (Primary - Free Tier)
+- Uses GPT-3.5-turbo for high-quality, contextual translations
+- Free tier with reasonable rate limits
+- Best for meaningful, natural language translations
+- Automatically handles context, tone, and cultural nuances
 
-#### Groq AI (Fast & Free)
-- Llama-powered translations with cultural awareness
-- Free tier with fast processing
-- Excellent for creative and marketing content
-
-#### Google Translate (Fast & Simple)  
+#### Google Translate (Fallback)
+- Reliable backup when OpenAI is unavailable
 - Quick, literal translations
 - No API key required for basic usage
-- Good for simple phrase translations
+- Ensures translation always completes
 
-#### Mock Service (Demo)
-- Perfect for testing and demonstrations
-- Shows how AI translation features work
-- No external API dependencies
+### API Configuration
+To use your own OpenAI API key (optional for better rate limits):
+```typescript
+// In src/services/translationService.ts
+'Authorization': 'Bearer YOUR_OPENAI_API_KEY'
+```
 
 ### Customization
 - Modify `src/services/translationService.ts` to add new translation providers
@@ -140,8 +139,9 @@ A powerful, professional translation table application built with React, TypeScr
 
 ## 📊 Performance
 
-- **Translation Success Rate**: >95% with retry logic
+- **Translation Success Rate**: >95% with intelligent fallback
 - **Text Capacity**: Unlimited (automatically chunked)
+- **AI Processing**: Natural, contextual translations
 - **Supported Browsers**: All modern browsers
 - **Mobile Responsive**: Full tablet and mobile support
 - **API Protection**: Intelligent rate limiting prevents blocks
@@ -178,8 +178,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🎉 Acknowledgments
 
-- **Helsinki-NLP** for excellent open-source translation models
-- **Groq** for fast AI inference capabilities
+- **OpenAI** for providing excellent free-tier AI translation capabilities
+- **Google Translate** for reliable fallback translation service
 - **Lucide** for beautiful, consistent icons
 - **Tailwind CSS** for utility-first styling
 - **React Team** for the amazing framework
@@ -188,4 +188,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ for the global community**
 
-Make your content speak every language with TranslateX - where meaningful translation meets professional workflow. 
+Make your content speak every language with TranslateX - where AI-powered translation meets professional workflow. 
