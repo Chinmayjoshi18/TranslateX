@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet } from 'lucide-react';
+import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet, GripVertical, GripHorizontal } from 'lucide-react';
 import { translateText, TranslationResult } from './services/translationService';
 import * as XLSX from 'xlsx';
 
@@ -9,10 +9,15 @@ interface TableRow {
   english: string;
   translations: TranslationResult;
   isTranslating: boolean;
+  height: number;
 }
 
 interface CopyState {
   [key: string]: boolean;
+}
+
+interface ColumnWidths {
+  [key: string]: number;
 }
 
 function App() {
@@ -22,11 +27,28 @@ function App() {
       id: '1',
       english: '',
       translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' },
-      isTranslating: false
+      isTranslating: false,
+      height: 80
     }
   ]);
   const [copyStates, setCopyStates] = useState<CopyState>({});
   const [globalCopied, setGlobalCopied] = useState(false);
+  const [columnWidths, setColumnWidths] = useState<ColumnWidths>({
+    rowNumber: 60,
+    english: 250,
+    spanish: 250,
+    french: 250,
+    turkish: 250,
+    russian: 250,
+    ukrainian: 250,
+    portuguese: 250,
+    chinese: 250,
+    japanese: 250,
+    arabic: 250,
+    actions: 80
+  });
+  const [isResizing, setIsResizing] = useState<string | null>(null);
+  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width?: number; height?: number }>({ x: 0, y: 0 });
 
   // Language configurations
   const languages = [
@@ -41,6 +63,89 @@ function App() {
     { key: 'japanese', name: 'Japanese', flag: '🇯🇵', code: 'ja' },
     { key: 'arabic', name: 'Arabic', flag: '🇸🇦', code: 'ar' }
   ];
+
+  // Column resize handlers
+  const handleColumnResizeStart = (columnKey: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(columnKey);
+    setResizeStart({ 
+      x: e.clientX, 
+      y: e.clientY, 
+      width: columnWidths[columnKey] 
+    });
+  };
+
+  const handleColumnResize = useCallback((e: MouseEvent) => {
+    if (!isResizing || !resizeStart.width) return;
+    
+    const deltaX = e.clientX - resizeStart.x;
+    const newWidth = Math.max(100, resizeStart.width + deltaX);
+    
+    setColumnWidths(prev => ({
+      ...prev,
+      [isResizing]: newWidth
+    }));
+  }, [isResizing, resizeStart]);
+
+  const handleColumnResizeEnd = useCallback(() => {
+    setIsResizing(null);
+    setResizeStart({ x: 0, y: 0 });
+  }, []);
+
+  // Row resize handlers
+  const handleRowResizeStart = (rowId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const row = rows.find(r => r.id === rowId);
+    if (!row) return;
+    
+    setIsResizing(`row-${rowId}`);
+    setResizeStart({ 
+      x: e.clientX, 
+      y: e.clientY, 
+      height: row.height 
+    });
+  };
+
+  const handleRowResize = useCallback((e: MouseEvent) => {
+    if (!isResizing?.startsWith('row-') || !resizeStart.height) return;
+    
+    const deltaY = e.clientY - resizeStart.y;
+    const newHeight = Math.max(60, resizeStart.height + deltaY);
+    const rowId = isResizing.replace('row-', '');
+    
+    setRows(prev => prev.map(row => 
+      row.id === rowId ? { ...row, height: newHeight } : row
+    ));
+  }, [isResizing, resizeStart, rows]);
+
+  const handleResizeEnd = useCallback(() => {
+    if (isResizing?.startsWith('row-')) {
+      handleColumnResizeEnd();
+    } else {
+      handleColumnResizeEnd();
+    }
+  }, [isResizing, handleColumnResizeEnd]);
+
+  // Global mouse event listeners for resizing
+  useEffect(() => {
+    if (isResizing) {
+      const handleMouseMove = (e: MouseEvent) => {
+        if (isResizing.startsWith('row-')) {
+          handleRowResize(e);
+        } else {
+          handleColumnResize(e);
+        }
+      };
+
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleResizeEnd);
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleResizeEnd);
+      };
+    }
+  }, [isResizing, handleColumnResize, handleRowResize, handleResizeEnd]);
 
   // Debounced translation for individual rows
   const translateRow = useCallback(async (rowId: string, text: string) => {
@@ -95,7 +200,8 @@ function App() {
       id: Date.now().toString(),
       english: '',
       translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' },
-      isTranslating: false
+      isTranslating: false,
+      height: 80
     };
     setRows(prev => [...prev, newRow]);
   };
@@ -299,18 +405,30 @@ function App() {
 
         {/* Table */}
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+          <div className="overflow-auto">
+            <table className="border-collapse" style={{ width: 'fit-content', minWidth: '100%' }}>
               {/* Table Header */}
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-12 px-3 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200">
+                  {/* Row Number Column */}
+                  <th 
+                    className="px-3 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200 relative"
+                    style={{ width: columnWidths.rowNumber }}
+                  >
                     #
+                    {/* Column resize handle */}
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 transition-colors"
+                      onMouseDown={(e) => handleColumnResizeStart('rowNumber', e)}
+                    />
                   </th>
+
+                  {/* Language Columns */}
                   {languages.map((lang) => (
                     <th
                       key={lang.key}
-                      className="px-4 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200 min-w-[200px]"
+                      className="px-4 py-4 text-left text-sm font-medium text-gray-700 border-b border-r border-gray-200 relative"
+                      style={{ width: columnWidths[lang.key] }}
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-lg">{lang.flag}</span>
@@ -319,10 +437,25 @@ function App() {
                           <span className="text-xs text-gray-500">{t(lang.key)}</span>
                         )}
                       </div>
+                      {/* Column resize handle */}
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 transition-colors"
+                        onMouseDown={(e) => handleColumnResizeStart(lang.key, e)}
+                      />
                     </th>
                   ))}
-                  <th className="w-16 px-3 py-4 text-center text-sm font-medium text-gray-700 border-b border-gray-200">
+
+                  {/* Actions Column */}
+                  <th 
+                    className="px-3 py-4 text-center text-sm font-medium text-gray-700 border-b border-gray-200 relative"
+                    style={{ width: columnWidths.actions }}
+                  >
                     Actions
+                    {/* Column resize handle */}
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 transition-colors"
+                      onMouseDown={(e) => handleColumnResizeStart('actions', e)}
+                    />
                   </th>
                 </tr>
               </thead>
@@ -330,21 +463,34 @@ function App() {
               {/* Table Body */}
               <tbody>
                 {rows.map((row, index) => (
-                  <tr key={row.id} className="hover:bg-gray-50">
+                  <tr key={row.id} className="hover:bg-gray-50 relative group">
                     {/* Row Number */}
-                    <td className="px-3 py-4 text-sm text-gray-500 border-b border-r border-gray-200 text-center">
-                      {index + 1}
+                    <td 
+                      className="px-3 text-sm text-gray-500 border-b border-r border-gray-200 text-center relative"
+                      style={{ width: columnWidths.rowNumber, height: row.height }}
+                    >
+                      <div className="flex items-center justify-center h-full">
+                        {index + 1}
+                      </div>
+                      {/* Row resize handle */}
+                      <div
+                        className="absolute left-0 right-0 bottom-0 h-1 cursor-row-resize hover:bg-blue-400 transition-colors opacity-0 group-hover:opacity-100"
+                        onMouseDown={(e) => handleRowResizeStart(row.id, e)}
+                      />
                     </td>
 
                     {/* English Column (Editable) */}
-                    <td className="px-4 py-4 border-b border-r border-gray-200">
-                      <div className="relative">
+                    <td 
+                      className="px-4 border-b border-r border-gray-200 relative"
+                      style={{ width: columnWidths.english, height: row.height }}
+                    >
+                      <div className="relative h-full">
                         <textarea
                           value={row.english}
                           onChange={(e) => updateEnglishText(row.id, e.target.value)}
                           placeholder="Enter English text here..."
-                          className="w-full min-h-[60px] p-3 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                          style={{ whiteSpace: 'pre-wrap' }}
+                          className="w-full h-full p-3 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                          style={{ whiteSpace: 'pre-wrap', minHeight: '60px' }}
                         />
                         {row.english && (
                           <button
@@ -359,19 +505,29 @@ function App() {
                           </button>
                         )}
                       </div>
+                      {/* Row resize handle */}
+                      <div
+                        className="absolute left-0 right-0 bottom-0 h-1 cursor-row-resize hover:bg-blue-400 transition-colors opacity-0 group-hover:opacity-100"
+                        onMouseDown={(e) => handleRowResizeStart(row.id, e)}
+                      />
                     </td>
 
                     {/* Translation Columns */}
                     {languages.slice(1).map((lang) => (
-                      <td key={lang.key} className="px-4 py-4 border-b border-r border-gray-200">
-                        <div className="relative">
+                      <td 
+                        key={lang.key} 
+                        className="px-4 border-b border-r border-gray-200 relative"
+                        style={{ width: columnWidths[lang.key], height: row.height }}
+                      >
+                        <div className="relative h-full">
                           <textarea
                             value={row.translations[lang.key as keyof TranslationResult]}
                             readOnly
-                            className="w-full min-h-[60px] p-3 border border-gray-200 rounded-md resize-none bg-gray-50 text-gray-700"
+                            className="w-full h-full p-3 border border-gray-200 rounded-md resize-none bg-gray-50 text-gray-700"
                             style={{ 
                               whiteSpace: 'pre-wrap',
-                              direction: lang.code === 'ar' ? 'rtl' : 'ltr'
+                              direction: lang.code === 'ar' ? 'rtl' : 'ltr',
+                              minHeight: '60px'
                             }}
                           />
                           {row.isTranslating && (
@@ -392,19 +548,34 @@ function App() {
                             </button>
                           )}
                         </div>
+                        {/* Row resize handle */}
+                        <div
+                          className="absolute left-0 right-0 bottom-0 h-1 cursor-row-resize hover:bg-blue-400 transition-colors opacity-0 group-hover:opacity-100"
+                          onMouseDown={(e) => handleRowResizeStart(row.id, e)}
+                        />
                       </td>
                     ))}
 
                     {/* Actions Column */}
-                    <td className="px-3 py-4 border-b border-gray-200 text-center">
-                      <button
-                        onClick={() => removeRow(row.id)}
-                        disabled={rows.length === 1}
-                        className="p-2 text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Delete Row"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <td 
+                      className="px-3 border-b border-gray-200 text-center relative"
+                      style={{ width: columnWidths.actions, height: row.height }}
+                    >
+                      <div className="flex items-center justify-center h-full">
+                        <button
+                          onClick={() => removeRow(row.id)}
+                          disabled={rows.length === 1}
+                          className="p-2 text-gray-400 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Delete Row"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {/* Row resize handle */}
+                      <div
+                        className="absolute left-0 right-0 bottom-0 h-1 cursor-row-resize hover:bg-blue-400 transition-colors opacity-0 group-hover:opacity-100"
+                        onMouseDown={(e) => handleRowResizeStart(row.id, e)}
+                      />
                     </td>
                   </tr>
                 ))}
