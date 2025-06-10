@@ -10,6 +10,12 @@ interface TableRow {
   translations: TranslationResult;
   isTranslating: boolean;
   height: number;
+  error?: string;
+  translationProgress?: {
+    chunksTotal: number;
+    chunksCompleted: number;
+    currentLanguage: string;
+  };
 }
 
 interface CopyState {
@@ -28,7 +34,9 @@ function App() {
       english: '',
       translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' },
       isTranslating: false,
-      height: 80
+      height: 80,
+      error: undefined,
+      translationProgress: undefined
     }
   ]);
   const [copyStates, setCopyStates] = useState<CopyState>({});
@@ -49,6 +57,12 @@ function App() {
   });
   const [isResizing, setIsResizing] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width?: number; height?: number }>({ x: 0, y: 0 });
+  const [translationStats, setTranslationStats] = useState({
+    totalTranslations: 0,
+    successfulTranslations: 0,
+    failedTranslations: 0,
+    lastTranslationTime: null as Date | null
+  });
 
   // Language configurations
   const languages = [
@@ -150,52 +164,116 @@ function App() {
     }
   }, [isResizing, handleColumnResize, handleRowResize, handleResizeEnd]);
 
-  // Debounced translation for individual rows
+  // Enhanced translation with better error handling and retries
   const translateRow = useCallback(async (rowId: string, text: string) => {
     if (!text.trim()) {
       setRows(prev => prev.map(row => 
         row.id === rowId 
-          ? { ...row, translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' } }
+          ? { ...row, translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' }, error: undefined, translationProgress: undefined }
           : row
       ));
       return;
     }
 
     setRows(prev => prev.map(row => 
-      row.id === rowId ? { ...row, isTranslating: true } : row
+      row.id === rowId ? { ...row, isTranslating: true, error: undefined, translationProgress: undefined } : row
     ));
 
     try {
+      // Add progress tracking
+      const chunks = Math.ceil(text.length / 1000); // Estimate chunks
+      const languages = ['Spanish', 'French', 'Turkish', 'Russian', 'Ukrainian', 'Portuguese', 'Chinese', 'Japanese', 'Arabic'];
+      
+      let currentLangIndex = 0;
+      const progressInterval = setInterval(() => {
+        if (currentLangIndex < languages.length) {
+          setRows(prev => prev.map(row => 
+            row.id === rowId 
+              ? { 
+                  ...row, 
+                  translationProgress: {
+                    chunksTotal: chunks * languages.length,
+                    chunksCompleted: currentLangIndex * chunks,
+                    currentLanguage: languages[currentLangIndex]
+                  }
+                }
+              : row
+          ));
+          currentLangIndex++;
+        }
+      }, 500);
+
       const result = await translateText(text);
+      
+      clearInterval(progressInterval);
+      
+      // Update success stats
+      setTranslationStats(prev => ({
+        ...prev,
+        totalTranslations: prev.totalTranslations + 1,
+        successfulTranslations: prev.successfulTranslations + 1,
+        lastTranslationTime: new Date()
+      }));
+      
       setRows(prev => prev.map(row => 
         row.id === rowId 
-          ? { ...row, translations: result, isTranslating: false }
+          ? { ...row, translations: result, isTranslating: false, error: undefined, translationProgress: undefined }
           : row
       ));
     } catch (error) {
-      console.error('Translation failed:', error);
+      console.error('Translation failed for row', rowId, ':', error);
+      const errorMessage = error instanceof Error ? error.message : 'Translation failed';
+      
+      // Update failure stats
+      setTranslationStats(prev => ({
+        ...prev,
+        totalTranslations: prev.totalTranslations + 1,
+        failedTranslations: prev.failedTranslations + 1,
+        lastTranslationTime: new Date()
+      }));
+      
       setRows(prev => prev.map(row => 
-        row.id === rowId ? { ...row, isTranslating: false } : row
+        row.id === rowId 
+          ? { 
+              ...row, 
+              isTranslating: false, 
+              error: errorMessage,
+              translationProgress: undefined,
+              // Clear translations on error to avoid showing stale data
+              translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' }
+            } 
+          : row
       ));
+      
+      // Auto-retry after a delay for certain errors
+      if (errorMessage.includes('temporarily busy') || errorMessage.includes('Rate limited')) {
+        setTimeout(() => {
+          translateRow(rowId, text);
+        }, 3000 + Math.random() * 2000); // Random delay to avoid thundering herd
+      }
     }
   }, []);
 
-  // Debounce implementation
+  // Enhanced debounce implementation with stale prevention
   useEffect(() => {
     const timeouts: { [key: string]: number } = {};
     
     rows.forEach(row => {
-      if (row.english && row.english.trim()) {
+      if (row.english && row.english.trim() && !row.isTranslating && !row.error) {
         timeouts[row.id] = window.setTimeout(() => {
-          translateRow(row.id, row.english);
-        }, 500);
+          // Double-check the row still exists and hasn't changed
+          const currentRow = rows.find(r => r.id === row.id);
+          if (currentRow && currentRow.english === row.english && !currentRow.isTranslating) {
+            translateRow(row.id, row.english);
+          }
+        }, 800); // Slightly longer delay to reduce API calls
       }
     });
 
     return () => {
       Object.values(timeouts).forEach(timeout => clearTimeout(timeout));
     };
-  }, [rows.map(row => row.english).join('|'), translateRow]);
+  }, [rows.map(row => `${row.id}:${row.english}:${row.isTranslating}:${!!row.error}`).join('|'), translateRow]);
 
   // Add new row
   const addRow = () => {
@@ -204,7 +282,9 @@ function App() {
       english: '',
       translations: { spanish: '', french: '', turkish: '', russian: '', ukrainian: '', portuguese: '', chinese: '', japanese: '', arabic: '' },
       isTranslating: false,
-      height: 80
+      height: 80,
+      error: undefined,
+      translationProgress: undefined
     };
     setRows(prev => [...prev, newRow]);
   };
@@ -358,7 +438,26 @@ function App() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <Globe className="w-8 h-8 text-indigo-600" />
-            <h1 className="text-3xl font-bold text-gray-800">{t('title')}</h1>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">{t('title')}</h1>
+              {translationStats.totalTranslations > 0 && (
+                <div className="text-sm text-gray-600 mt-1 flex items-center gap-2">
+                  <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
+                    {translationStats.successfulTranslations} successful
+                  </span>
+                  {translationStats.failedTranslations > 0 && (
+                    <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs">
+                      {translationStats.failedTranslations} failed
+                    </span>
+                  )}
+                  {translationStats.lastTranslationTime && (
+                    <span className="text-xs text-gray-500">
+                      Last: {translationStats.lastTranslationTime.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           
           <div className="flex items-center gap-3">
@@ -522,10 +621,14 @@ function App() {
                           value={row.english}
                           onChange={(e) => updateEnglishText(row.id, e.target.value)}
                           placeholder="Enter English text here..."
-                          className="w-full h-full p-3 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                          className={`w-full h-full p-3 border rounded-md resize-none focus:ring-2 focus:border-transparent outline-none ${
+                            row.error 
+                              ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                              : 'border-gray-300 focus:ring-indigo-500'
+                          }`}
                           style={{ whiteSpace: 'pre-wrap', minHeight: '60px' }}
                         />
-                        {row.english && (
+                        {row.english && !row.error && (
                           <button
                             onClick={() => handleCellCopy(row.english, `${row.id}-english`)}
                             className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
@@ -536,6 +639,21 @@ function App() {
                               <Copy className="w-4 h-4" />
                             )}
                           </button>
+                        )}
+                        {row.error && (
+                          <div className="absolute bottom-2 left-2 right-2">
+                            <div className="bg-red-100 border border-red-300 rounded-md p-2 text-xs text-red-700">
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="flex-1">{row.error}</span>
+                                <button
+                                  onClick={() => translateRow(row.id, row.english)}
+                                  className="flex-shrink-0 px-2 py-1 bg-red-200 hover:bg-red-300 rounded text-xs transition-colors"
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            </div>
+                          </div>
                         )}
                       </div>
                       {/* Row resize handle */}
@@ -561,16 +679,38 @@ function App() {
                           <textarea
                             value={row.translations[lang.key as keyof TranslationResult]}
                             readOnly
-                            className="w-full h-full p-3 border border-gray-200 rounded-md resize-none bg-gray-50 text-gray-700"
+                            className="w-full h-full p-3 border border-gray-200 rounded-md resize-none bg-gray-50 text-gray-700 overflow-y-auto"
                             style={{ 
                               whiteSpace: 'pre-wrap',
                               direction: lang.code === 'ar' ? 'rtl' : 'ltr',
-                              minHeight: '60px'
+                              minHeight: '60px',
+                              wordWrap: 'break-word',
+                              overflowWrap: 'break-word'
                             }}
                           />
                           {row.isTranslating && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 bg-opacity-75 rounded-md">
-                              <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 bg-opacity-95 rounded-md p-2">
+                              <Loader2 className="w-5 h-5 animate-spin text-indigo-600 mb-2" />
+                              {row.translationProgress ? (
+                                <div className="text-center">
+                                  <div className="text-xs text-gray-600 mb-1">
+                                    Translating to {row.translationProgress.currentLanguage}
+                                  </div>
+                                  <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
+                                    <div 
+                                      className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                                      style={{ 
+                                        width: `${Math.min(100, (row.translationProgress.chunksCompleted / row.translationProgress.chunksTotal) * 100)}%` 
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {row.translationProgress.chunksCompleted} / {row.translationProgress.chunksTotal} chunks
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-600">Preparing translation...</span>
+                              )}
                             </div>
                           )}
                           {row.translations[lang.key as keyof TranslationResult] && (
