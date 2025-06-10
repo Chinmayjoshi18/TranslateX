@@ -16,8 +16,10 @@ export interface TranslationResult {
 
 
 // Google Translate API implementation (you'll need to add your API key)
+// Commented out to avoid unused variable errors in production build
+/*
 const googleTranslate = async (text: string): Promise<TranslationResult> => {
-  const API_KEY = import.meta.env.VITE_GOOGLE_TRANSLATE_API_KEY;
+  const API_KEY = (import.meta as any).env?.VITE_GOOGLE_TRANSLATE_API_KEY;
   
   if (!API_KEY) {
     throw new Error('Google Translate API key not found');
@@ -48,17 +50,27 @@ const googleTranslate = async (text: string): Promise<TranslationResult> => {
     return data.data.translations[0].translatedText;
   };
 
-  const [spanish, french] = await Promise.all([
+  const [spanish, french, turkish, russian, ukrainian, portuguese, chinese, japanese, arabic] = await Promise.all([
     translateToLanguage('es'),
-    translateToLanguage('fr')
+    translateToLanguage('fr'),
+    translateToLanguage('tr'),
+    translateToLanguage('ru'),
+    translateToLanguage('uk'),
+    translateToLanguage('pt'),
+    translateToLanguage('zh'),
+    translateToLanguage('ja'),
+    translateToLanguage('ar')
   ]);
 
-  return { spanish, french };
+  return { spanish, french, turkish, russian, ukrainian, portuguese, chinese, japanese, arabic };
 };
+*/
 
 // OpenAI API implementation (alternative option)
+// Commented out to avoid unused variable errors in production build
+/*
 const openAITranslate = async (text: string): Promise<TranslationResult> => {
-  const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
+  const API_KEY = (import.meta as any).env?.VITE_OPENAI_API_KEY;
   
   if (!API_KEY) {
     throw new Error('OpenAI API key not found');
@@ -99,6 +111,7 @@ const openAITranslate = async (text: string): Promise<TranslationResult> => {
     throw new Error('Invalid translation response');
   }
 };
+*/
 
 // Free translation service using Google Translate (no API key required)
 const freeGoogleTranslate = async (text: string): Promise<TranslationResult> => {
@@ -168,7 +181,7 @@ export const translateText = async (text: string): Promise<TranslationResult> =>
     // Using real Google Translate service (no API key required)
     return await freeGoogleTranslate(text);
     
-    // Alternative real translation options:
+    // Alternative real translation options (uncomment functions above to use):
     // return await googleTranslate(text); // Official Google API with key (more reliable)
     // return await openAITranslate(text); // OpenAI API with key (AI-powered)
   } catch (error) {

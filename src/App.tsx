@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet, GripVertical, GripHorizontal } from 'lucide-react';
+import { Copy, Check, Globe, Loader2, Plus, Trash2, Download, FileSpreadsheet } from 'lucide-react';
 import { translateText, TranslationResult } from './services/translationService';
 import * as XLSX from 'xlsx';
 
@@ -179,11 +179,11 @@ function App() {
 
   // Debounce implementation
   useEffect(() => {
-    const timeouts: { [key: string]: NodeJS.Timeout } = {};
+    const timeouts: { [key: string]: number } = {};
     
     rows.forEach(row => {
       if (row.english && row.english.trim()) {
-        timeouts[row.id] = setTimeout(() => {
+        timeouts[row.id] = window.setTimeout(() => {
           translateRow(row.id, row.english);
         }, 500);
       }
