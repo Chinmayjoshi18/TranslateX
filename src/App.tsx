@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Globe, Loader2, X, Bold, Italic, Underline } from 'lucide-react';
+import { Copy, Check, Globe, Loader2, X, Bold, Italic, Underline, Download, FileSpreadsheet } from 'lucide-react';
 import { translateText, TranslationResult } from './services/translationService';
+import * as XLSX from 'xlsx';
 
 interface CopyState {
   [key: string]: boolean;
@@ -136,6 +137,119 @@ function App() {
     i18n.changeLanguage(i18n.language === 'en' ? 'zh' : 'en');
   };
 
+  // Export functions
+  const exportToCSV = () => {
+    const englishText = getPlainText(inputText);
+    if (!englishText.trim()) {
+      alert('Please enter some text to export');
+      return;
+    }
+
+    // Split text into lines
+    const lines = englishText.split('\n').filter(line => line.trim());
+    
+    // Create CSV headers
+    const headers = ['English', 'Spanish', 'French', 'Turkish', 'Russian', 'Ukrainian', 'Portuguese', 'Chinese', 'Japanese', 'Arabic'];
+    
+    // Create CSV data rows
+    const csvData = [];
+    csvData.push(headers.join(','));
+    
+    // For each line, get the corresponding translation line
+    lines.forEach((line, index) => {
+      const translationLines = {
+        spanish: translations.spanish.split('\n').filter(l => l.trim()),
+        french: translations.french.split('\n').filter(l => l.trim()),
+        turkish: translations.turkish.split('\n').filter(l => l.trim()),
+        russian: translations.russian.split('\n').filter(l => l.trim()),
+        ukrainian: translations.ukrainian.split('\n').filter(l => l.trim()),
+        portuguese: translations.portuguese.split('\n').filter(l => l.trim()),
+        chinese: translations.chinese.split('\n').filter(l => l.trim()),
+        japanese: translations.japanese.split('\n').filter(l => l.trim()),
+        arabic: translations.arabic.split('\n').filter(l => l.trim())
+      };
+
+      const row = [
+        `"${line.replace(/"/g, '""')}"`,
+        `"${(translationLines.spanish[index] || '').replace(/"/g, '""')}"`,
+        `"${(translationLines.french[index] || '').replace(/"/g, '""')}"`,
+        `"${(translationLines.turkish[index] || '').replace(/"/g, '""')}"`,
+        `"${(translationLines.russian[index] || '').replace(/"/g, '""')}"`,
+        `"${(translationLines.ukrainian[index] || '').replace(/"/g, '""')}"`,
+        `"${(translationLines.portuguese[index] || '').replace(/"/g, '""')}"`,
+        `"${(translationLines.chinese[index] || '').replace(/"/g, '""')}"`,
+        `"${(translationLines.japanese[index] || '').replace(/"/g, '""')}"`,
+        `"${(translationLines.arabic[index] || '').replace(/"/g, '""')}"`
+      ];
+      csvData.push(row.join(','));
+    });
+
+    // Download CSV file
+    const csvContent = csvData.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `TranslateX_Export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToExcel = () => {
+    const englishText = getPlainText(inputText);
+    if (!englishText.trim()) {
+      alert('Please enter some text to export');
+      return;
+    }
+
+    // Split text into lines
+    const lines = englishText.split('\n').filter(line => line.trim());
+    
+    // Create Excel data
+    const data = [];
+    
+    // Headers
+    data.push(['English', 'Spanish', 'French', 'Turkish', 'Russian', 'Ukrainian', 'Portuguese', 'Chinese', 'Japanese', 'Arabic']);
+    
+    // For each line, get the corresponding translation line
+    lines.forEach((line, index) => {
+      const translationLines = {
+        spanish: translations.spanish.split('\n').filter(l => l.trim()),
+        french: translations.french.split('\n').filter(l => l.trim()),
+        turkish: translations.turkish.split('\n').filter(l => l.trim()),
+        russian: translations.russian.split('\n').filter(l => l.trim()),
+        ukrainian: translations.ukrainian.split('\n').filter(l => l.trim()),
+        portuguese: translations.portuguese.split('\n').filter(l => l.trim()),
+        chinese: translations.chinese.split('\n').filter(l => l.trim()),
+        japanese: translations.japanese.split('\n').filter(l => l.trim()),
+        arabic: translations.arabic.split('\n').filter(l => l.trim())
+      };
+
+      data.push([
+        line,
+        translationLines.spanish[index] || '',
+        translationLines.french[index] || '',
+        translationLines.turkish[index] || '',
+        translationLines.russian[index] || '',
+        translationLines.ukrainian[index] || '',
+        translationLines.portuguese[index] || '',
+        translationLines.chinese[index] || '',
+        translationLines.japanese[index] || '',
+        translationLines.arabic[index] || ''
+      ]);
+    });
+
+    // Create workbook and worksheet
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Translations');
+
+    // Download Excel file
+    XLSX.writeFile(wb, `TranslateX_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   // Define available languages with their configurations
   const targetLanguages = [
     { key: 'spanish', flag: '🇪🇸', code: 'es' },
@@ -158,12 +272,36 @@ function App() {
             <Globe className="w-6 h-6 text-indigo-600" />
             <h1 className="text-3xl font-bold text-gray-800">{t('title')}</h1>
           </div>
-          <button
-            onClick={toggleLanguage}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200"
-          >
-            {t('switchLanguage')}
-          </button>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <button
+              onClick={toggleLanguage}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200"
+            >
+              {t('switchLanguage')}
+            </button>
+            
+            {/* Export Buttons */}
+            {inputText && getPlainText(inputText).trim() && (
+              <>
+                <button
+                  onClick={exportToCSV}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center gap-2"
+                  title="Export as CSV"
+                >
+                  <Download className="w-4 h-4" />
+                  Export CSV
+                </button>
+                <button
+                  onClick={exportToExcel}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 flex items-center gap-2"
+                  title="Export as Excel"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Export Excel
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Translation Interface */}
