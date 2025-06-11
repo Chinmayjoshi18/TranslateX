@@ -1,5 +1,5 @@
-// Translation service using only OpenAI
-// Simple, efficient translation with proper error handling and chunking
+// Translation service using only OpenAI - Optimized for Speed
+// Fast, parallel translation with minimal delays
 
 export interface TranslationResult {
   spanish: string;
@@ -32,7 +32,7 @@ const LANGUAGE_CODES = {
   arabic: { code: 'ar', name: 'Arabic' }
 };
 
-// Rate limiter for API protection
+// Minimal rate limiter for API protection
 class RateLimiter {
   private lastCall = 0;
   private interval: number;
@@ -54,20 +54,21 @@ class RateLimiter {
   }
 }
 
-const openaiRateLimiter = new RateLimiter(1000); // 1 second for OpenAI
+// Reduced rate limiting for faster translation
+const openaiRateLimiter = new RateLimiter(100); // 100ms for faster requests
 
-// Retry logic with exponential backoff
+// Fast retry logic with reduced delays
 async function withRetry<T>(
   operation: () => Promise<T>, 
-  maxRetries: number = 3,
-  baseDelay: number = 1000
+  maxRetries: number = 2,
+  baseDelay: number = 500
 ): Promise<T> {
   let lastError: Error;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
-        const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+        const delay = baseDelay * attempt; // Linear backoff for speed
         await new Promise(resolve => setTimeout(resolve, delay));
       }
       
@@ -85,63 +86,43 @@ async function withRetry<T>(
   throw lastError!;
 }
 
-// Intelligent text chunking
-function chunkText(text: string, maxChunkSize: number = 1500): string[] {
+// Optimized text chunking for shorter texts
+function chunkText(text: string, maxChunkSize: number = 2000): string[] {
   if (text.length <= maxChunkSize) {
     return [text];
   }
 
   const chunks: string[] = [];
-  const lines = text.split('\n');
+  const sentences = text.split(/(?<=[.!?])\s+/);
   let currentChunk = '';
 
-  for (const line of lines) {
-    if ((currentChunk + '\n' + line).length <= maxChunkSize) {
-      currentChunk += (currentChunk ? '\n' : '') + line;
+  for (const sentence of sentences) {
+    if ((currentChunk + ' ' + sentence).length <= maxChunkSize) {
+      currentChunk += (currentChunk ? ' ' : '') + sentence;
     } else {
       if (currentChunk) {
         chunks.push(currentChunk);
-        currentChunk = line;
+        currentChunk = sentence;
       } else {
-        // Line itself is too long, split by sentences
-        const sentences = line.split(/(?<=[.!?])\s+/);
-        let sentenceChunk = '';
+        // If single sentence is too long, split by words
+        const words = sentence.split(' ');
+        let wordChunk = '';
         
-        for (const sentence of sentences) {
-          if ((sentenceChunk + ' ' + sentence).length <= maxChunkSize) {
-            sentenceChunk += (sentenceChunk ? ' ' : '') + sentence;
+        for (const word of words) {
+          if ((wordChunk + ' ' + word).length <= maxChunkSize) {
+            wordChunk += (wordChunk ? ' ' : '') + word;
           } else {
-            if (sentenceChunk) {
-              chunks.push(sentenceChunk);
-              sentenceChunk = sentence;
+            if (wordChunk) {
+              chunks.push(wordChunk);
+              wordChunk = word;
             } else {
-              // Sentence itself is too long, split by words
-              const words = sentence.split(' ');
-              let wordChunk = '';
-              
-              for (const word of words) {
-                if ((wordChunk + ' ' + word).length <= maxChunkSize) {
-                  wordChunk += (wordChunk ? ' ' : '') + word;
-                } else {
-                  if (wordChunk) {
-                    chunks.push(wordChunk);
-                    wordChunk = word;
-                  } else {
-                    // Word itself is too long, just add it
-                    chunks.push(word);
-                  }
-                }
-              }
-              
-              if (wordChunk) {
-                sentenceChunk = wordChunk;
-              }
+              chunks.push(word); // Single word too long, just add it
             }
           }
         }
         
-        if (sentenceChunk) {
-          currentChunk = sentenceChunk;
+        if (wordChunk) {
+          currentChunk = wordChunk;
         }
       }
     }
@@ -163,15 +144,18 @@ function getOpenAIApiKey(): string {
   return apiKey;
 }
 
-// OpenAI translation
+// Fast OpenAI translation with minimal chunking
 async function translateWithOpenAI(text: string, targetLang: string, langName: string): Promise<string> {
-  const chunks = chunkText(text, 1500);
-  const translatedChunks: string[] = [];
+  const chunks = chunkText(text, 2000);
   
-  for (const chunk of chunks) {
-    await openaiRateLimiter.wait();
+  // Process chunks in parallel for speed
+  const chunkPromises = chunks.map(async (chunk, index) => {
+    // Only apply rate limiting for first chunk to reduce delays
+    if (index === 0) {
+      await openaiRateLimiter.wait();
+    }
     
-    const prompt = `Translate the following English text to ${langName}. Provide a natural, contextual translation that captures the meaning and tone, not just word-for-word translation. Only respond with the translation, no additional text:
+    const prompt = `Translate this English text to ${langName}. Respond only with the translation:
 
 ${chunk}`;
 
@@ -186,18 +170,16 @@ ${chunk}`;
         messages: [
           {
             role: 'system',
-            content: 'You are a professional translator. Provide natural, contextual translations that preserve meaning and tone.'
+            content: 'You are a professional translator. Provide natural, accurate translations.'
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        temperature: 0.3,
-        max_tokens: 2000,
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0
+        temperature: 0.2,
+        max_tokens: 2500,
+        top_p: 1
       })
     });
 
@@ -213,71 +195,70 @@ ${chunk}`;
       throw new Error('Empty response from OpenAI API');
     }
     
-    translatedChunks.push(translatedText);
-  }
+    return translatedText;
+  });
   
+  const translatedChunks = await Promise.all(chunkPromises);
   return translatedChunks.join(' ');
 }
 
-// Main translation function for each language
+// Fast translation for each language
 async function translateToLanguage(text: string, targetLang: keyof typeof LANGUAGE_CODES): Promise<string> {
   const langInfo = LANGUAGE_CODES[targetLang];
-  
-  console.log(`🔄 Translating to ${langInfo.name}...`);
-  
-  const result = await withRetry(() => translateWithOpenAI(text, langInfo.code, langInfo.name), 2, 1000);
-  
-  console.log(`✅ Completed translation to ${langInfo.name}`);
-  
+  const result = await withRetry(() => translateWithOpenAI(text, langInfo.code, langInfo.name), 1, 300);
   return result;
 }
 
-// Main export function
+// Main export function - PARALLEL PROCESSING for speed
 export async function translateText(text: string): Promise<TranslationResult> {
-  console.log('🚀 Starting OpenAI translation...');
+  console.log('🚀 Starting fast OpenAI translation...');
   
   if (!text.trim()) {
     throw new Error('No text provided for translation');
   }
 
   const languages = Object.keys(LANGUAGE_CODES) as (keyof typeof LANGUAGE_CODES)[];
-  const result: Partial<TranslationResult> = {};
-  const errors: string[] = [];
-
-  // Sequential processing to avoid overwhelming the API
-  for (const lang of languages) {
+  
+  // PARALLEL PROCESSING - All languages at once for maximum speed
+  const translationPromises = languages.map(async (lang) => {
     try {
-      console.log(`🔄 Processing ${LANGUAGE_CODES[lang].name}...`);
-      
+      console.log(`🔄 Starting ${LANGUAGE_CODES[lang].name}...`);
       const translation = await translateToLanguage(text, lang);
-      result[lang] = translation;
-      
-      console.log(`✓ ${LANGUAGE_CODES[lang].name}: completed`);
-      
-      // Add delay between languages to respect rate limits
-      if (languages.indexOf(lang) < languages.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      
+      console.log(`✅ ${LANGUAGE_CODES[lang].name} completed`);
+      return { lang, translation, success: true };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      errors.push(`${LANGUAGE_CODES[lang].name}: ${errorMsg}`);
-      result[lang] = '';
-      console.error(`✗ Failed to translate to ${LANGUAGE_CODES[lang].name}:`, errorMsg);
+      console.error(`❌ ${LANGUAGE_CODES[lang].name} failed:`, errorMsg);
+      return { lang, translation: '', success: false, error: errorMsg };
     }
-  }
+  });
+
+  // Wait for all translations to complete
+  const results = await Promise.all(translationPromises);
+  
+  // Build result object
+  const result: Partial<TranslationResult> = {};
+  const errors: string[] = [];
+  
+  results.forEach(({ lang, translation, success, error }) => {
+    result[lang] = translation;
+    if (!success && error) {
+      errors.push(`${LANGUAGE_CODES[lang].name}: ${error}`);
+    }
+  });
 
   // If all translations failed, throw an error
   if (errors.length === languages.length) {
     throw new Error(`All translations failed. Errors: ${errors.join('; ')}`);
   }
 
-  // If some translations failed, log warnings but continue
+  // Log warnings for partial failures
   if (errors.length > 0) {
     console.warn(`Some translations failed: ${errors.join('; ')}`);
   }
 
-  console.log(`🎉 OpenAI translation completed. Success: ${languages.length - errors.length}/${languages.length}`);
+  const successCount = languages.length - errors.length;
+  console.log(`🎉 Fast translation completed in parallel! Success: ${successCount}/${languages.length}`);
 
   return result as TranslationResult;
 }

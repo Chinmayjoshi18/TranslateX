@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { translateText, type TranslationResult } from '../services/translationService';
 import { useDebounce } from '../hooks/useDebounce';
 import { ChevronUpIcon, ChevronDownIcon, ArrowPathIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/24/outline';
@@ -30,7 +30,7 @@ function TranslationTable() {
     'portuguese', 'chinese', 'japanese', 'arabic'
   ]);
 
-  const debouncedText = useDebounce(englishText, 800);
+  const debouncedText = useDebounce(englishText, 300);
 
   const languageNames = {
     spanish: 'Spanish',
@@ -61,17 +61,8 @@ function TranslationTable() {
     }));
   }, [columnOrder]);
 
-  useEffect(() => {
-    if (debouncedText.trim()) {
-      handleTranslate();
-    } else {
-      setTranslations(null);
-      setError(null);
-    }
-  }, [debouncedText]);
-
-  const handleTranslate = async () => {
-    if (!debouncedText.trim()) return;
+  const handleTranslate = useCallback(async () => {
+    if (!debouncedText.trim() || isTranslating) return;
 
     setIsTranslating(true);
     setError(null);
@@ -108,11 +99,20 @@ function TranslationTable() {
     } finally {
       setIsTranslating(false);
     }
-  };
+  }, [debouncedText, isTranslating, languageNames]);
 
-  const retryTranslation = () => {
+  useEffect(() => {
+    if (debouncedText.trim()) {
+      handleTranslate();
+    } else {
+      setTranslations(null);
+      setError(null);
+    }
+  }, [debouncedText, handleTranslate]);
+
+  const retryTranslation = useCallback(() => {
     handleTranslate();
-  };
+  }, [handleTranslate]);
 
   const successRate = statistics.totalTranslations > 0 
     ? Math.round((statistics.successfulTranslations / statistics.totalTranslations) * 100) 
