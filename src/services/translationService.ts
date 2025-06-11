@@ -1,5 +1,5 @@
-// Translation service with support for multiple providers
-// You can easily switch between Google Translate, OpenAI, or other services
+// Translation service using only OpenAI
+// Simple, efficient translation with proper error handling and chunking
 
 export interface TranslationResult {
   spanish: string;
@@ -54,7 +54,7 @@ class RateLimiter {
   }
 }
 
-const rateLimiter = new RateLimiter(1000); // 1 second between requests for OpenAI free tier
+const openaiRateLimiter = new RateLimiter(1000); // 1 second for OpenAI
 
 // Retry logic with exponential backoff
 async function withRetry<T>(
@@ -154,137 +154,87 @@ function chunkText(text: string, maxChunkSize: number = 1500): string[] {
   return chunks.length > 0 ? chunks : [text];
 }
 
-// OpenAI translation using free tier
+// Get OpenAI API key from environment
+function getOpenAIApiKey(): string {
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OpenAI API key not found. Please set VITE_OPENAI_API_KEY in your environment variables.');
+  }
+  return apiKey;
+}
+
+// OpenAI translation
 async function translateWithOpenAI(text: string, targetLang: string, langName: string): Promise<string> {
-  const chunks = chunkText(text, 1500); // Reasonable chunk size for OpenAI
+  const chunks = chunkText(text, 1500);
   const translatedChunks: string[] = [];
   
   for (const chunk of chunks) {
-    await rateLimiter.wait();
+    await openaiRateLimiter.wait();
     
-    try {
-      const prompt = `Translate the following English text to ${langName}. Provide a natural, contextual translation that captures the meaning and tone, not just word-for-word translation. Only respond with the translation, no additional text:
+    const prompt = `Translate the following English text to ${langName}. Provide a natural, contextual translation that captures the meaning and tone, not just word-for-word translation. Only respond with the translation, no additional text:
 
 ${chunk}`;
 
-      // Using OpenAI's free tier endpoint
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer sk-proj-placeholder', // Free tier placeholder
-        },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a professional translator. Provide natural, contextual translations that preserve meaning and tone.'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.3,
-          max_tokens: 2000,
-          top_p: 1,
-          frequency_penalty: 0,
-          presence_penalty: 0
-        })
-      });
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getOpenAIApiKey()}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a professional translator. Provide natural, contextual translations that preserve meaning and tone.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0
+      })
+    });
 
-      if (!response.ok) {
-        if (response.status === 429) {
-          throw new Error('Rate limited by OpenAI API');
-        } else if (response.status === 401) {
-          throw new Error('OpenAI API authentication failed');
-        } else if (response.status === 403) {
-          throw new Error('OpenAI API access forbidden');
-        }
-        throw new Error(`OpenAI API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const translatedText = data.choices?.[0]?.message?.content?.trim() || '';
-      translatedChunks.push(translatedText);
-      
-    } catch (error) {
-      console.error('OpenAI translation error for chunk:', error);
-      
-      // Fallback to Google Translate if OpenAI fails
-      try {
-        console.log('Falling back to Google Translate...');
-        const fallbackResult = await translateWithGoogle(chunk, targetLang);
-        translatedChunks.push(fallbackResult);
-      } catch (fallbackError) {
-        throw error; // Throw original OpenAI error
-      }
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
     }
+
+    const data = await response.json();
+    const translatedText = data.choices?.[0]?.message?.content?.trim() || '';
+    
+    if (!translatedText) {
+      throw new Error('Empty response from OpenAI API');
+    }
+    
+    translatedChunks.push(translatedText);
   }
   
   return translatedChunks.join(' ');
-}
-
-// Google Translate fallback
-async function translateWithGoogle(text: string, targetLang: string): Promise<string> {
-  const chunks = chunkText(text, 800); // Smaller chunks for Google
-  const translatedChunks: string[] = [];
-  
-  for (const chunk of chunks) {
-    await new Promise(resolve => setTimeout(resolve, 200)); // Rate limiting
-    
-    try {
-      const encodedText = encodeURIComponent(chunk);
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t&q=${encodedText}`;
-      
-      if (url.length > 6000) {
-        throw new Error('Text too long for Google Translate URL limit');
-      }
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/json, text/plain, */*',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Cache-Control': 'no-cache'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Google Translate API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const translatedText = data[0]?.map((item: any) => item[0]).join('') || '';
-      translatedChunks.push(translatedText);
-      
-    } catch (error) {
-      console.error('Google translation error for chunk:', error);
-      throw error;
-    }
-  }
-  
-  return translatedChunks.join('');
 }
 
 // Main translation function for each language
 async function translateToLanguage(text: string, targetLang: keyof typeof LANGUAGE_CODES): Promise<string> {
   const langInfo = LANGUAGE_CODES[targetLang];
   
-  try {
-    console.log(`Translating to ${langInfo.name} using OpenAI...`);
-    return await translateWithOpenAI(text, langInfo.code, langInfo.name);
-  } catch (error) {
-    console.error(`Failed to translate to ${langInfo.name}:`, error);
-    throw new Error(`Failed to translate to ${langInfo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
+  console.log(`🔄 Translating to ${langInfo.name}...`);
+  
+  const result = await withRetry(() => translateWithOpenAI(text, langInfo.code, langInfo.name), 2, 1000);
+  
+  console.log(`✅ Completed translation to ${langInfo.name}`);
+  
+  return result;
 }
 
 // Main export function
 export async function translateText(text: string): Promise<TranslationResult> {
-  console.log('Starting translation with OpenAI...');
+  console.log('🚀 Starting OpenAI translation...');
   
   if (!text.trim()) {
     throw new Error('No text provided for translation');
@@ -294,23 +244,19 @@ export async function translateText(text: string): Promise<TranslationResult> {
   const result: Partial<TranslationResult> = {};
   const errors: string[] = [];
 
-  // Sequential processing to avoid overwhelming APIs
+  // Sequential processing to avoid overwhelming the API
   for (const lang of languages) {
     try {
-      console.log(`Translating to ${LANGUAGE_CODES[lang].name}...`);
+      console.log(`🔄 Processing ${LANGUAGE_CODES[lang].name}...`);
       
-      const translation = await withRetry(
-        () => translateToLanguage(text, lang),
-        3,
-        1000
-      );
-      
+      const translation = await translateToLanguage(text, lang);
       result[lang] = translation;
-      console.log(`✓ Successfully translated to ${LANGUAGE_CODES[lang].name}`);
       
-      // Add delay between languages to be respectful to APIs
+      console.log(`✓ ${LANGUAGE_CODES[lang].name}: completed`);
+      
+      // Add delay between languages to respect rate limits
       if (languages.indexOf(lang) < languages.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       
     } catch (error) {
@@ -331,7 +277,7 @@ export async function translateText(text: string): Promise<TranslationResult> {
     console.warn(`Some translations failed: ${errors.join('; ')}`);
   }
 
-  console.log(`Translation completed using OpenAI. Success: ${languages.length - errors.length}/${languages.length}`);
+  console.log(`🎉 OpenAI translation completed. Success: ${languages.length - errors.length}/${languages.length}`);
 
   return result as TranslationResult;
-} 
+}
