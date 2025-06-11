@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { translateText, type TranslationResult } from '../services/translationService';
 import { useDebounce } from '../hooks/useDebounce';
 import { ChevronUpIcon, ChevronDownIcon, ArrowPathIcon, ExclamationTriangleIcon, CheckCircleIcon, ClockIcon } from '@heroicons/react/24/outline';

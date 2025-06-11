@@ -145,7 +145,7 @@ function getOpenAIApiKey(): string {
 }
 
 // Fast OpenAI translation with minimal chunking
-async function translateWithOpenAI(text: string, targetLang: string, langName: string): Promise<string> {
+async function translateWithOpenAI(text: string, _targetLang: string, langName: string): Promise<string> {
   const chunks = chunkText(text, 2000);
   
   // Process chunks in parallel for speed
